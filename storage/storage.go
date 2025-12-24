@@ -16,9 +16,16 @@ type Todo struct {
 	Completed bool   `json:"completed"`
 }
 
+type TodoEvent struct {
+	Entry  Todo   `json:"entry"`
+	Action string `json:"action"`
+}
+
 type TodoStorage struct {
-	dict map[string]Todo
-	lock sync.RWMutex
+	dict        map[string]Todo
+	lock        sync.RWMutex
+	subscribers []chan TodoEvent
+	subLock     sync.RWMutex
 }
 
 var ErrorNotFound = errors.New("not found")
@@ -26,14 +33,43 @@ var ErrorNotFound = errors.New("not found")
 func NewTodoStorage() *TodoStorage {
 	dict := make(map[string]Todo)
 	return &TodoStorage{
-		dict: dict,
+		dict:        dict,
+		subscribers: make([]chan TodoEvent, 0),
+	}
+}
+
+// Subscribe returns a channel that receives all events
+func (tds *TodoStorage) Subscribe() <-chan TodoEvent {
+	tds.subLock.Lock()
+	defer tds.subLock.Unlock()
+	ch := make(chan TodoEvent, 100)
+	tds.subscribers = append(tds.subscribers, ch)
+	return ch
+}
+
+// broadcastEvent sends an event to all subscribers
+func (tds *TodoStorage) broadcastEvent(event TodoEvent) {
+	tds.subLock.RLock()
+	defer tds.subLock.RUnlock()
+	for _, ch := range tds.subscribers {
+		select {
+		case ch <- event:
+		default:
+			// Channel is full, skip this subscriber
+		}
 	}
 }
 
 func (tds *TodoStorage) Create(todo *Todo, ret *struct{}) error {
 	tds.lock.Lock()
-	defer tds.lock.Unlock()
 	tds.dict[todo.Task] = *todo
+	tds.lock.Unlock()
+
+	// Emit event
+	tds.broadcastEvent(TodoEvent{
+		Entry:  *todo,
+		Action: "create",
+	})
 	return nil
 }
 
@@ -56,20 +92,44 @@ func (tds *TodoStorage) Read(todo *Todo, dict *map[string]Todo) error {
 
 func (tds *TodoStorage) Update(todo *Todo, ret *struct{}) error {
 	tds.lock.Lock()
-	defer tds.lock.Unlock()
+	exists := false
 	if _, ok := tds.dict[todo.Task]; ok {
 		tds.dict[todo.Task] = *todo
-		return nil
+		exists = true
 	}
-	return ErrorNotFound
+	tds.lock.Unlock()
+
+	if !exists {
+		return ErrorNotFound
+	}
+
+	// Emit event
+	tds.broadcastEvent(TodoEvent{
+		Entry:  *todo,
+		Action: "update",
+	})
+	return nil
 }
 
 func (tds *TodoStorage) Delete(todo *Todo, ret *struct{}) error {
 	tds.lock.Lock()
-	defer tds.lock.Unlock()
-	if _, ok := tds.dict[todo.Task]; ok {
+	exists := false
+	var deletedTodo Todo
+	if val, ok := tds.dict[todo.Task]; ok {
+		deletedTodo = val
 		delete(tds.dict, todo.Task)
-		return nil
+		exists = true
 	}
-	return ErrorNotFound
+	tds.lock.Unlock()
+
+	if !exists {
+		return ErrorNotFound
+	}
+
+	// Emit event
+	tds.broadcastEvent(TodoEvent{
+		Entry:  deletedTodo,
+		Action: "delete",
+	})
+	return nil
 }

@@ -1,4 +1,4 @@
-module github.com/fractallTS/PS
+module api
 
 go 1.25.4
 
