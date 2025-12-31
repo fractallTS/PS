@@ -8,128 +8,441 @@ package storage
 
 import (
 	"errors"
+	"fmt"
 	"sync"
+	"time"
 )
 
-type Todo struct {
-	Task      string `json:"task"`
-	Completed bool   `json:"completed"`
+// User predstavlja uporabnika razpravljalnice
+type User struct {
+	ID   int64
+	Name string
 }
 
-type TodoEvent struct {
-	Entry  Todo   `json:"entry"`
-	Action string `json:"action"`
+// Topic predstavlja temo razprave
+type Topic struct {
+	ID   int64
+	Name string
 }
 
-type TodoStorage struct {
-	dict        map[string]Todo
-	lock        sync.RWMutex
-	subscribers []chan TodoEvent
-	subLock     sync.RWMutex
+// Message predstavlja sporočilo v temi
+type Message struct {
+	ID        int64
+	TopicID   int64
+	UserID    int64
+	Text      string
+	CreatedAt time.Time
+	Likes     int32
 }
 
-var ErrorNotFound = errors.New("not found")
+// Like predstavlja všeček sporočila
+// Uporabljamo za sledenje, kdo je že všečkal sporočilo (da preprečimo dvojno všečkanje)
+type Like struct {
+	TopicID   int64
+	MessageID int64
+	UserID    int64 // uporabnik, ki je všečkal
+}
 
-func NewTodoStorage() *TodoStorage {
-	dict := make(map[string]Todo)
-	return &TodoStorage{
-		dict:        dict,
-		subscribers: make([]chan TodoEvent, 0),
+// MessageEvent predstavlja dogodek, ki se zgodi z sporočilom (dodajanje, posodobitev, brisanje, všečkanje)
+type MessageEvent struct {
+	SequenceNumber int64
+	OpType         string // "POST", "UPDATE", "DELETE", "LIKE"
+	Message        Message
+	EventAt        time.Time
+}
+
+// DiscussionBoardStorage je glavna struktura za shranjevanje vseh podatkov
+type DiscussionBoardStorage struct {
+	// Podatki
+	users    map[int64]*User    // map[userID] -> User
+	topics   map[int64]*Topic   // map[topicID] -> Topic
+	messages map[int64]*Message // map[messageID] -> Message
+	likes    map[string]*Like   // map["topicID:messageID:userID"] -> Like (za preprečevanje dvojnega všečkanja)
+
+	// Indeksi za hitrejše iskanje
+	messagesByTopic map[int64][]int64 // map[topicID] -> []messageID (sporočila v temi, urejena po ID)
+
+	// Števci za ID-je
+	nextUserID    int64
+	nextTopicID   int64
+	nextMessageID int64
+	nextEventSeq  int64 // zaporedna številka dogodka za naročnine
+
+	// Sinhronizacija
+	mu sync.RWMutex
+
+	// Naročnine na dogodke (za streaming)
+	subscribers map[int64][]chan MessageEvent // map[userID] -> []subscription channels
+	subMu       sync.RWMutex
+}
+
+var (
+	ErrorUserNotFound    = errors.New("user not found")
+	ErrorTopicNotFound   = errors.New("topic not found")
+	ErrorMessageNotFound = errors.New("message not found")
+	ErrorUnauthorized    = errors.New("unauthorized: user is not the owner of this message")
+	ErrorAlreadyLiked    = errors.New("message already liked by this user")
+)
+
+// NewDiscussionBoardStorage ustvari novo shrambo za razpravljalnico
+func NewDiscussionBoardStorage() *DiscussionBoardStorage {
+	return &DiscussionBoardStorage{
+		users:           make(map[int64]*User),
+		topics:          make(map[int64]*Topic),
+		messages:        make(map[int64]*Message),
+		likes:           make(map[string]*Like),
+		messagesByTopic: make(map[int64][]int64),
+		nextUserID:      1,
+		nextTopicID:     1,
+		nextMessageID:   1,
+		nextEventSeq:    1,
+		subscribers:     make(map[int64][]chan MessageEvent),
 	}
 }
 
-// Subscribe returns a channel that receives all events
-func (tds *TodoStorage) Subscribe() <-chan TodoEvent {
-	tds.subLock.Lock()
-	defer tds.subLock.Unlock()
-	ch := make(chan TodoEvent, 100)
-	tds.subscribers = append(tds.subscribers, ch)
+// CreateUser ustvari novega uporabnika in mu dodeli ID
+func (s *DiscussionBoardStorage) CreateUser(name string) (*User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	user := &User{
+		ID:   s.nextUserID,
+		Name: name,
+	}
+	s.users[user.ID] = user
+	s.nextUserID++
+	return user, nil
+}
+
+// GetUser vrne uporabnika po ID-ju
+func (s *DiscussionBoardStorage) GetUser(userID int64) (*User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	user, ok := s.users[userID]
+	if !ok {
+		return nil, ErrorUserNotFound
+	}
+	return user, nil
+}
+
+// CreateTopic ustvari novo temo
+func (s *DiscussionBoardStorage) CreateTopic(name string) (*Topic, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	topic := &Topic{
+		ID:   s.nextTopicID,
+		Name: name,
+	}
+	s.topics[topic.ID] = topic
+	s.messagesByTopic[topic.ID] = make([]int64, 0)
+	s.nextTopicID++
+	return topic, nil
+}
+
+// GetTopic vrne temo po ID-ju
+func (s *DiscussionBoardStorage) GetTopic(topicID int64) (*Topic, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	topic, ok := s.topics[topicID]
+	if !ok {
+		return nil, ErrorTopicNotFound
+	}
+	return topic, nil
+}
+
+// GetAllTopics vrne vse teme
+func (s *DiscussionBoardStorage) GetAllTopics() []*Topic {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	topics := make([]*Topic, 0, len(s.topics))
+	for _, topic := range s.topics {
+		topics = append(topics, topic)
+	}
+	return topics
+}
+
+// PostMessage doda novo sporočilo v temo
+// Preveri, da uporabnik in tema obstajata
+func (s *DiscussionBoardStorage) PostMessage(topicID, userID int64, text string) (*Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Preverimo, da uporabnik obstaja
+	if _, ok := s.users[userID]; !ok {
+		return nil, ErrorUserNotFound
+	}
+
+	// Preverimo, da tema obstaja
+	if _, ok := s.topics[topicID]; !ok {
+		return nil, ErrorTopicNotFound
+	}
+
+	message := &Message{
+		ID:        s.nextMessageID,
+		TopicID:   topicID,
+		UserID:    userID,
+		Text:      text,
+		CreatedAt: time.Now(),
+		Likes:     0,
+	}
+	s.messages[message.ID] = message
+	s.messagesByTopic[topicID] = append(s.messagesByTopic[topicID], message.ID)
+	s.nextMessageID++
+
+	// Pošljemo dogodek naročnikom
+	s.broadcastEvent(MessageEvent{
+		SequenceNumber: s.nextEventSeq,
+		OpType:         "POST",
+		Message:        *message,
+		EventAt:        time.Now(),
+	})
+	s.nextEventSeq++
+
+	return message, nil
+}
+
+// GetMessage vrne sporočilo po ID-ju
+func (s *DiscussionBoardStorage) GetMessage(messageID int64) (*Message, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	message, ok := s.messages[messageID]
+	if !ok {
+		return nil, ErrorMessageNotFound
+	}
+	return message, nil
+}
+
+// GetMessages vrne sporočila v temi
+// fromMessageID: ID sporočila, od katerega začnemo (0 = od začetka)
+// limit: največje število sporočil
+func (s *DiscussionBoardStorage) GetMessages(topicID int64, fromMessageID int64, limit int32) ([]*Message, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Preverimo, da tema obstaja
+	if _, ok := s.topics[topicID]; !ok {
+		return nil, ErrorTopicNotFound
+	}
+
+	messageIDs := s.messagesByTopic[topicID]
+	if len(messageIDs) == 0 {
+		return []*Message{}, nil
+	}
+
+	// Najdemo začetni indeks
+	startIdx := 0
+	if fromMessageID > 0 {
+		for i, id := range messageIDs {
+			if id >= fromMessageID {
+				startIdx = i
+				break
+			}
+		}
+	}
+
+	// Vzamemo sporočila do limita
+	messages := make([]*Message, 0)
+	count := int32(0)
+	for i := startIdx; i < len(messageIDs) && count < limit; i++ {
+		if msg, ok := s.messages[messageIDs[i]]; ok {
+			messages = append(messages, msg)
+			count++
+		}
+	}
+
+	return messages, nil
+}
+
+// UpdateMessage posodobi sporočilo
+// Dovoljeno samo uporabniku, ki je sporočilo objavil
+func (s *DiscussionBoardStorage) UpdateMessage(topicID, userID, messageID int64, newText string) (*Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	message, ok := s.messages[messageID]
+	if !ok {
+		return nil, ErrorMessageNotFound
+	}
+
+	// Preverimo, da je sporočilo v pravi temi
+	if message.TopicID != topicID {
+		return nil, ErrorTopicNotFound
+	}
+
+	// Preverimo avtorizacijo
+	if message.UserID != userID {
+		return nil, ErrorUnauthorized
+	}
+
+	// Posodobimo sporočilo
+	message.Text = newText
+
+	// Pošljemo dogodek naročnikom
+	s.broadcastEvent(MessageEvent{
+		SequenceNumber: s.nextEventSeq,
+		OpType:         "UPDATE",
+		Message:        *message,
+		EventAt:        time.Now(),
+	})
+	s.nextEventSeq++
+
+	return message, nil
+}
+
+// DeleteMessage izbriše sporočilo
+// Dovoljeno samo uporabniku, ki je sporočilo objavil
+func (s *DiscussionBoardStorage) DeleteMessage(topicID, userID, messageID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	message, ok := s.messages[messageID]
+	if !ok {
+		return ErrorMessageNotFound
+	}
+
+	// Preverimo, da je sporočilo v pravi temi
+	if message.TopicID != topicID {
+		return ErrorTopicNotFound
+	}
+
+	// Preverimo avtorizacijo
+	if message.UserID != userID {
+		return ErrorUnauthorized
+	}
+
+	// Izbrišemo sporočilo iz mape
+	delete(s.messages, messageID)
+
+	// Odstranimo iz indeksa teme
+	messageIDs := s.messagesByTopic[topicID]
+	for i, id := range messageIDs {
+		if id == messageID {
+			s.messagesByTopic[topicID] = append(messageIDs[:i], messageIDs[i+1:]...)
+			break
+		}
+	}
+
+	// Pošljemo dogodek naročnikom
+	s.broadcastEvent(MessageEvent{
+		SequenceNumber: s.nextEventSeq,
+		OpType:         "DELETE",
+		Message:        *message,
+		EventAt:        time.Now(),
+	})
+	s.nextEventSeq++
+
+	return nil
+}
+
+// LikeMessage doda všeček sporočilu
+// Prepreči dvojno všečkanje istega sporočila z istim uporabnikom
+func (s *DiscussionBoardStorage) LikeMessage(topicID, messageID, userID int64) (*Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	message, ok := s.messages[messageID]
+	if !ok {
+		return nil, ErrorMessageNotFound
+	}
+
+	// Preverimo, da je sporočilo v pravi temi
+	if message.TopicID != topicID {
+		return nil, ErrorTopicNotFound
+	}
+
+	// Preverimo, da uporabnik obstaja
+	if _, ok := s.users[userID]; !ok {
+		return nil, ErrorUserNotFound
+	}
+
+	// Preverimo, da uporabnik še ni všečkal tega sporočila
+	likeKey := likeKey(topicID, messageID, userID)
+	if _, ok := s.likes[likeKey]; ok {
+		return nil, ErrorAlreadyLiked
+	}
+
+	// Dodamo všeček
+	like := &Like{
+		TopicID:   topicID,
+		MessageID: messageID,
+		UserID:    userID,
+	}
+	s.likes[likeKey] = like
+	message.Likes++
+
+	// Pošljemo dogodek naročnikom
+	s.broadcastEvent(MessageEvent{
+		SequenceNumber: s.nextEventSeq,
+		OpType:         "LIKE",
+		Message:        *message,
+		EventAt:        time.Now(),
+	})
+	s.nextEventSeq++
+
+	return message, nil
+}
+
+// Subscribe ustvari naročnino na dogodke za določene teme
+// Vrne kanal, preko katerega se prejemajo dogodki
+func (s *DiscussionBoardStorage) Subscribe(userID int64, topicIDs []int64, fromMessageID int64) <-chan MessageEvent {
+	ch := make(chan MessageEvent, 100)
+
+	s.subMu.Lock()
+	s.subscribers[userID] = append(s.subscribers[userID], ch)
+	s.subMu.Unlock()
+
+	// Pošljemo zgodovinske dogodke (sporočila, ki so že objavljena)
+	// To je poenostavljena verzija - v pravi implementaciji bi morali filtrirati po topicIDs
+	go func() {
+		s.mu.RLock()
+		// Pošljemo vsa obstoječa sporočila v naročenih temah
+		for _, topicID := range topicIDs {
+			if messages, ok := s.messagesByTopic[topicID]; ok {
+				for _, msgID := range messages {
+					if msgID > fromMessageID {
+						if msg, ok := s.messages[msgID]; ok {
+							select {
+							case ch <- MessageEvent{
+								SequenceNumber: 0, // zgodovinski dogodki nimajo zaporedne številke
+								OpType:         "POST",
+								Message:        *msg,
+								EventAt:        msg.CreatedAt,
+							}:
+							default:
+							}
+						}
+					}
+				}
+			}
+		}
+		s.mu.RUnlock()
+	}()
+
 	return ch
 }
 
-// broadcastEvent sends an event to all subscribers
-func (tds *TodoStorage) broadcastEvent(event TodoEvent) {
-	tds.subLock.RLock()
-	defer tds.subLock.RUnlock()
-	for _, ch := range tds.subscribers {
-		select {
-		case ch <- event:
-		default:
-			// Channel is full, skip this subscriber
+// broadcastEvent pošlje dogodek vsem naročnikom
+func (s *DiscussionBoardStorage) broadcastEvent(event MessageEvent) {
+	s.subMu.RLock()
+	defer s.subMu.RUnlock()
+
+	for _, channels := range s.subscribers {
+		for _, ch := range channels {
+			select {
+			case ch <- event:
+			default:
+				// Kanali so polni, preskočimo
+			}
 		}
 	}
 }
 
-func (tds *TodoStorage) Create(todo *Todo, ret *struct{}) error {
-	tds.lock.Lock()
-	tds.dict[todo.Task] = *todo
-	tds.lock.Unlock()
-
-	// Emit event
-	tds.broadcastEvent(TodoEvent{
-		Entry:  *todo,
-		Action: "create",
-	})
-	return nil
-}
-
-func (tds *TodoStorage) Read(todo *Todo, dict *map[string]Todo) error {
-	tds.lock.RLock()
-	defer tds.lock.RUnlock()
-	if todo.Task == "" {
-		for k, v := range tds.dict {
-			(*dict)[k] = v
-		}
-		return nil
-	} else {
-		if val, ok := tds.dict[todo.Task]; ok {
-			(*dict)[val.Task] = val
-			return nil
-		}
-		return ErrorNotFound
-	}
-}
-
-func (tds *TodoStorage) Update(todo *Todo, ret *struct{}) error {
-	tds.lock.Lock()
-	exists := false
-	if _, ok := tds.dict[todo.Task]; ok {
-		tds.dict[todo.Task] = *todo
-		exists = true
-	}
-	tds.lock.Unlock()
-
-	if !exists {
-		return ErrorNotFound
-	}
-
-	// Emit event
-	tds.broadcastEvent(TodoEvent{
-		Entry:  *todo,
-		Action: "update",
-	})
-	return nil
-}
-
-func (tds *TodoStorage) Delete(todo *Todo, ret *struct{}) error {
-	tds.lock.Lock()
-	exists := false
-	var deletedTodo Todo
-	if val, ok := tds.dict[todo.Task]; ok {
-		deletedTodo = val
-		delete(tds.dict, todo.Task)
-		exists = true
-	}
-	tds.lock.Unlock()
-
-	if !exists {
-		return ErrorNotFound
-	}
-
-	// Emit event
-	tds.broadcastEvent(TodoEvent{
-		Entry:  deletedTodo,
-		Action: "delete",
-	})
-	return nil
+// likeKey ustvari ključ za mapo všečkov
+func likeKey(topicID, messageID, userID int64) string {
+	return fmt.Sprintf("%d:%d:%d", topicID, messageID, userID)
 }
