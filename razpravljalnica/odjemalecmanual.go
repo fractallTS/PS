@@ -1,0 +1,386 @@
+package main
+
+import (
+	razpravljalnica "api/razpravljalnica/protobufStorage"
+	"bufio"
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
+)
+
+func ClientManual(url string) {
+	//vzpostavimo povezavo s strežnikom
+	fmt.Printf("gRPC client connecting to %v\n", url)
+	conn, err := grpc.NewClient(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+
+	// Vzpostavimo vmesnika gRPC
+	messageBoardClient := razpravljalnica.NewMessageBoardClient(conn)
+	controlPlaneClient := razpravljalnica.NewControlPlaneClient(conn)
+
+	// Nov bufio Reader instance
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("\n=== Razpravljalnica Manual Client ===")
+
+	// Naredimo nov user z imenom prebranim iz CLI
+	fmt.Print("Enter username: ")
+	username, _ := reader.ReadString('\n')
+	username = strings.TrimSpace(username)
+	user := createUser(messageBoardClient, username)
+
+	fmt.Println("Type 'h' for help")
+
+	// Glavni loop za CLI iz katerega preberemo ukaze in ji izvedemo
+	for {
+		fmt.Print("\n> ")
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+
+		if input == "" {
+			continue
+		}
+
+		parts := strings.Fields(input)
+		command := parts[0]
+
+		switch command {
+		case "h", "help":
+			showHelp()
+		case "createtopic":
+			if len(parts) < 2 {
+				fmt.Println("Usage: createtopic <name>")
+				break
+			}
+			createTopic(messageBoardClient, strings.Join(parts[1:], " "))
+		case "listtopics":
+			listTopics(messageBoardClient)
+		case "post":
+			if len(parts) < 3 {
+				fmt.Println("Usage: post <topicID> <message text>")
+				break
+			}
+			postMessage(messageBoardClient, user, parts[1], strings.Join(parts[2:], " "))
+		case "getmessages":
+			if len(parts) < 2 {
+				fmt.Println("Usage: getmessages <topicID>")
+				break
+			}
+			getMessages(messageBoardClient, parts[1])
+		case "like":
+			if len(parts) < 3 {
+				fmt.Println("Usage: like <topicID> <messageID>")
+				break
+			}
+			likeMessage(messageBoardClient, user, parts[1], parts[2])
+		case "update":
+			if len(parts) < 4 {
+				fmt.Println("Usage: update <topicID> <messageID> <new text>")
+				break
+			}
+			updateMessage(messageBoardClient, user, parts[1], parts[2], strings.Join(parts[3:], " "))
+		case "delete":
+			if len(parts) < 3 {
+				fmt.Println("Usage: delete <topicID> <messageID>")
+				break
+			}
+			deleteMessage(messageBoardClient, user, parts[1], parts[2])
+		case "sub":
+			if len(parts) < 2 {
+				fmt.Println("Usage: sub <topicID>")
+				break
+			}
+			subToTopic(messageBoardClient, user, parts[1])
+		case "clusterstate":
+			clusterState(controlPlaneClient)
+		case "exit", "quit":
+			fmt.Println("Exiting...")
+			return
+		default:
+			fmt.Printf("Unknown command: %s. Type 'h' for help.\n", command)
+		}
+	}
+}
+
+// Spodaj so definirane vse funkcije, ki jih lahko kličemo iz CLI
+
+func showHelp() {
+	fmt.Println("\n=== Available Commands ===")
+	fmt.Println("  h, help                             - Show this help message")
+	fmt.Println("  createtopic <name>                  - Create a new topic")
+	fmt.Println("  listtopics                          - List all topics")
+	fmt.Println("  post <topicID> <text>               - Post a message")
+	fmt.Println("  getmessages <topicID>               - Get messages from a topic")
+	fmt.Println("  like <topicID> <messageID>          - Like a message")
+	fmt.Println("  update <topicID> <messageID> <text> - Update a message")
+	fmt.Println("  delete <topicID> <messageID>        - Delete a message")
+	fmt.Println("  sub <topicID>                       - Subscribe to a topic (real-time events)")
+	fmt.Println("  clusterstate                        - Show cluster state (head/tail)")
+	fmt.Println("  exit, quit                          - Exit the client")
+	fmt.Println()
+}
+
+// V vsaki funkciji vzpostavimo svoj context saj se lahko izvajajo dlje časa in če pride do timeouta naj se prekinejo
+// da ne blokirajo celoten CLI (recimo v primeru če strežnik ne odgovarja)
+
+// Ustvarimo uporabnika
+func createUser(client razpravljalnica.MessageBoardClient, name string) *razpravljalnica.User {
+	// Vzpostavimo izvajalno okolje
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	// Ustvarimo uporabnika
+	user, err := client.CreateUser(ctx, &razpravljalnica.CreateUserRequest{Name: name})
+	if err != nil {
+		fmt.Printf("Error creating user: %v\n", err)
+		return nil
+	}
+	fmt.Printf("Created user: ID=%d, Name=%s\n\n", user.Id, user.Name)
+	return user
+}
+
+// Ustvarimo temo
+func createTopic(client razpravljalnica.MessageBoardClient, topicName string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	topic, err := client.CreateTopic(ctx, &razpravljalnica.CreateTopicRequest{Name: topicName})
+	if err != nil {
+		fmt.Printf("Error creating topic: %v\n", err)
+		return
+	}
+	fmt.Printf("Created topic: ID=%d, Name=%s\n", topic.Id, topic.Name)
+}
+
+// Izpišemo vse teme
+func listTopics(client razpravljalnica.MessageBoardClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	resp, err := client.ListTopics(ctx, &emptypb.Empty{})
+	if err != nil {
+		fmt.Printf("Error listing topics: %v\n", err)
+		return
+	}
+	if len(resp.Topics) == 0 {
+		fmt.Println("No topics found")
+		return
+	}
+	fmt.Println("\n=== Topics ===")
+	for _, topic := range resp.Topics {
+		fmt.Printf("  ID=%d, Name=%s\n", topic.Id, topic.Name)
+	}
+}
+
+// Objavimo sporočilo
+func postMessage(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr, text string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	topicID := parseInt64(topicIDStr)
+	if topicID == -1 {
+		return
+	}
+	msg, err := client.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
+		TopicId: topicID,
+		UserId:  user.Id,
+		Text:    text,
+	})
+	if err != nil {
+		fmt.Printf("Error posting message: %v\n", err)
+		return
+	}
+	fmt.Printf("Posted message: ID=%d, Text='%s'\n", msg.Id, msg.Text)
+}
+
+// Pridobimo sporočila iz teme
+func getMessages(client razpravljalnica.MessageBoardClient, topicIDStr string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	topicID := parseInt64(topicIDStr)
+	if topicID == -1 {
+		return
+	}
+	resp, err := client.GetMessages(ctx, &razpravljalnica.GetMessagesRequest{
+		TopicId:       topicID,
+		FromMessageId: 0,
+		Limit:         50,
+	})
+	if err != nil {
+		fmt.Printf("Error getting messages: %v\n", err)
+		return
+	}
+	if len(resp.Messages) == 0 {
+		fmt.Println("No messages found")
+		return
+	}
+	fmt.Println("\n=== Messages ===")
+	for _, msg := range resp.Messages {
+		fmt.Printf("  ID=%d, UserID=%d, Likes=%d, Text='%s'\n", msg.Id, msg.UserId, msg.Likes, msg.Text)
+	}
+}
+
+// Všečkajmo sporočilo
+func likeMessage(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr, msgIDStr string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	topicID := parseInt64(topicIDStr)
+	msgID := parseInt64(msgIDStr)
+	if topicID == -1 || msgID == -1 {
+		return
+	}
+	msg, err := client.LikeMessage(ctx, &razpravljalnica.LikeMessageRequest{
+		TopicId:   topicID,
+		MessageId: msgID,
+		UserId:    user.Id,
+	})
+	if err != nil {
+		fmt.Printf("Error liking message: %v\n", err)
+		return
+	}
+	fmt.Printf("Message ID=%d now has %d likes\n", msg.Id, msg.Likes)
+}
+
+// Posodobimo sporočilo
+func updateMessage(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr, msgIDStr, newText string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	topicID := parseInt64(topicIDStr)
+	msgID := parseInt64(msgIDStr)
+	if topicID == -1 || msgID == -1 {
+		return
+	}
+	msg, err := client.UpdateMessage(ctx, &razpravljalnica.UpdateMessageRequest{
+		TopicId:   topicID,
+		UserId:    user.Id,
+		MessageId: msgID,
+		Text:      newText,
+	})
+	if err != nil {
+		fmt.Printf("Error updating message: %v\n", err)
+		return
+	}
+	fmt.Printf("Updated message: ID=%d, New text='%s'\n", msg.Id, msg.Text)
+}
+
+// Izbrišemo sporočilo
+func deleteMessage(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr, msgIDStr string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	topicID := parseInt64(topicIDStr)
+	msgID := parseInt64(msgIDStr)
+	if topicID == -1 || msgID == -1 {
+		return
+	}
+	_, err := client.DeleteMessage(ctx, &razpravljalnica.DeleteMessageRequest{
+		TopicId:   topicID,
+		UserId:    user.Id,
+		MessageId: msgID,
+	})
+	if err != nil {
+		fmt.Printf("Error deleting message: %v\n", err)
+		return
+	}
+	fmt.Printf("Deleted message ID=%d\n", msgID)
+}
+
+// Naročnina na dogodke iz teme
+func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	topicID := parseInt64(topicIDStr)
+	if topicID == -1 {
+		return
+	}
+
+	fmt.Printf("Subscribing to topic ID=%d...\n", topicID)
+
+	subNodeResp, err := client.GetSubscriptionNode(ctx, &razpravljalnica.SubscriptionNodeRequest{
+		UserId:  user.Id,
+		TopicId: []int64{topicID},
+	})
+	if err != nil {
+		fmt.Printf("Error getting subscription node: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Subscription node: %s at %s\n", subNodeResp.Node.NodeId, subNodeResp.Node.Address)
+	fmt.Println("Waiting for events (press Ctrl+C to stop)...")
+
+	subCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stream, err := client.SubscribeTopic(subCtx, &razpravljalnica.SubscribeTopicRequest{
+		TopicId:        []int64{topicID},
+		UserId:         user.Id,
+		FromMessageId:  0,
+		SubscribeToken: subNodeResp.SubscribeToken,
+	})
+	if err != nil {
+		fmt.Printf("Error subscribing: %v\n", err)
+		return
+	}
+
+	for {
+		event, err := stream.Recv()
+		if err != nil {
+			fmt.Printf("Stream closed or error: %v\n", err)
+			return
+		}
+
+		opTypeStr := "UNKNOWN"
+		switch event.Op {
+		case razpravljalnica.OpType_OP_POST:
+			opTypeStr = "POST"
+		case razpravljalnica.OpType_OP_UPDATE:
+			opTypeStr = "UPDATE"
+		case razpravljalnica.OpType_OP_DELETE:
+			opTypeStr = "DELETE"
+		case razpravljalnica.OpType_OP_LIKE:
+			opTypeStr = "LIKE"
+		}
+
+		fmt.Printf("[Event #%d] %s - Message ID=%d, UserID=%d, Likes=%d, Text='%s'\n",
+			event.SequenceNumber, opTypeStr, event.Message.Id, event.Message.UserId, event.Message.Likes, event.Message.Text)
+	}
+}
+
+// Pridobimo stanje clustra
+func clusterState(client razpravljalnica.ControlPlaneClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	state, err := client.GetClusterState(ctx, &emptypb.Empty{})
+	if err != nil {
+		fmt.Printf("Error getting cluster state: %v\n", err)
+		return
+	}
+	fmt.Println("\n=== Cluster State ===")
+	fmt.Printf("   Head: %s at %s\n", state.Head.NodeId, state.Head.Address)
+	fmt.Printf("   Tail: %s at %s\n", state.Tail.NodeId, state.Tail.Address)
+	fmt.Println()
+}
+
+// Pomožna funkcija za pretvorbo stringa v int64 z obravnavo napak
+func parseInt64(s string) int64 {
+	var val int64
+	_, err := fmt.Sscanf(s, "%d", &val)
+	if err != nil {
+		fmt.Printf("Invalid number: %s\n", s)
+		return -1
+	}
+	return val
+}

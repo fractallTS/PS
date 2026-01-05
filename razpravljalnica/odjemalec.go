@@ -35,7 +35,7 @@ func Client(url string) {
 	defer cancel()
 
 	// Demonstracija delovanja Razpravljalnice
-	fmt.Println("\n=== Razpravljalnica Demo ===\n")
+	fmt.Println("\n=== Razpravljalnica Demo ===")
 
 	// 1. Preverimo stanje klastra
 	fmt.Println("1. Getting cluster state...")

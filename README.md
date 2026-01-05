@@ -10,7 +10,7 @@ Storitev (strežnik) napišite v programskem jeziku Go. Uporablja naj ogrodje **
 
 Progress:
 Osnova je narejena, manjka:
- - interface za odjemalca(CLI)
+ - interface za odjemalca(CLI) -> naceloma narejen (zazene se isto kot odjemalec sam se flag -clientMode manual)
  - pravilna control plane implementacija
  - verižna replikacija
  - token avtentikacija pri subscribe
