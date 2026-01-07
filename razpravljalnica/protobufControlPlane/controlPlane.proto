@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package razpravljalnica;
+
+option go_package = "/razpravljalnica";
+
+import "google/protobuf/empty.proto";
+
+message RegisterNodeRequest {
+    int64 node_id = 1;
+    string role = 2;
+    string client_address = 3;
+    string control_address = 4;
+    string data_address = 5;
+} 
+
+message RegisterNodeResponse {
+    int64 assigned_position = 1;
+    bool success = 2;
+} 
+
+message GetClusterStateResponse {
+    NodeInfo head = 1;
+    NodeInfo tail = 2;
+    NodeInfo sub = 3;
+} 
+
+message GetNextNodeRequest {
+    int64 node_id = 1;
+}
+
+message NodeInfo {
+  string node_id = 1;
+  string address = 2;
+}
+
+service ControlPlane {
+    
+    rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+
+    rpc GetClusterState(google.protobuf.Empty) returns (GetClusterStateResponse);
+
+    rpc GetNextNode(GetNextNodeRequest) returns (NodeInfo);
+}
