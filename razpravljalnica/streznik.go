@@ -301,29 +301,44 @@ func NewControlPlaneServer(headAddress, tailAddress string) *controlPlaneServer 
 
 // GetClusterState vrne stanje klastra (head, tail in sub vozlišča)
 func (s *controlPlaneServer) GetClusterState(ctx context.Context, req *emptypb.Empty) (*controlPlane.GetClusterStateResponse, error) {
-	hostname, _ := os.Hostname()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	numNodes := int64(len(s.nodes))
+	if numNodes == 0 {
+		return nil, status.Error(codes.NotFound, "no nodes registered")
+	}
+	// Izberemo sub vozlišče na podlagi števila naročnin (round-robin)
 	subIndex := s.subscriptionCounter % numNodes
-	s.mu.RLock()
-	head := &controlPlane.NodeInfo{
-		NodeId:  hostname + "-head",
-		Address: s.nodes[0].ClientAddress,
+	// Najdemo head, tail in sub vozlišče
+	var head, tail, sub *NodeRegistration
+	for _, node := range s.nodes {
+		if node.Position == 0 {
+			head = node
+		}
+		if node.Position == numNodes-1 {
+			tail = node
+		}
+		if node.Position == subIndex {
+			sub = node
+		}
+	}
+	Headresponse := &controlPlane.NodeInfo{
+		NodeId:  head.NodeId,
+		Address: head.ClientAddress,
+	}
+	Tailresponse := &controlPlane.NodeInfo{
+		NodeId:  tail.NodeId,
+		Address: tail.ClientAddress,
+	}
+	Subresponse := &controlPlane.NodeInfo{
+		NodeId:  sub.NodeId,
+		Address: sub.ClientAddress,
 	}
 
-	tail := &controlPlane.NodeInfo{
-		NodeId:  hostname + "-tail",
-		Address: s.nodes[numNodes-1].ClientAddress,
-	}
-
-	sub := &controlPlane.NodeInfo{
-		NodeId:  hostname + "-sub",
-		Address: s.nodes[subIndex].ClientAddress,
-	}
-	s.mu.RUnlock()
 	return &controlPlane.GetClusterStateResponse{
-		Head: head,
-		Tail: tail,
-		Sub:  sub,
+		Head: Headresponse,
+		Tail: Tailresponse,
+		Sub:  Subresponse,
 	}, nil
 }
 
@@ -368,15 +383,22 @@ func (s *controlPlaneServer) RegisterNode(ctx context.Context, req *controlPlane
 func (s *controlPlaneServer) GetNextNode(ctx context.Context, req *controlPlane.GetNextNodeRequest) (*controlPlane.NodeInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
+	// Poiščemo vozlišče z danim NodeId
 	node := s.nodes[req.NodeId]
 	if node == nil {
 		return nil, status.Error(codes.NotFound, "node not found")
 	}
-	return &controlPlane.NodeInfo{
-		NodeId:  node.NodeId,
-		Address: node.DataAddress,
-	}, nil
+	// Poiščemo naslednje vozlišče v verigi in ga tudi vrnemo
+	nextPosition := node.Position + 1
+	for _, n := range s.nodes {
+		if n.Position == nextPosition {
+			return &controlPlane.NodeInfo{
+				NodeId:  n.NodeId,
+				Address: n.DataAddress,
+			}, nil
+		}
+	}
+	return nil, status.Error(codes.NotFound, "next node not found")
 }
 
 func HeadServer(clientPort, controlPort, dataPort, serverControlPort string) {
@@ -404,6 +426,27 @@ func ChainServer(clientPort, controlPort, dataPort, serverControlPort string) {
 }
 
 func ControlServer(clientControlPort, serverControlPort string) {
+	// Pripravimo strežnik gRPC
+	grpcServer := grpc.NewServer()
+	// Pripravimo strežnika za ControlPlane
+	controlPlaneSrv := NewControlPlaneServer(clientControlPort, clientControlPort) // Za enostavno implementacijo sta head in tail enaka
+
+	// Registriramo storitve
+	controlPlane.RegisterControlPlaneServer(grpcServer, controlPlaneSrv)
+
+	// Odpremo vtičnico
+	listener, err := net.Listen("tcp", serverControlPort)
+	if err != nil {
+		panic(fmt.Sprintf("failed to listen: %v", err))
+	}
+
+	hostname, _ := os.Hostname()
+	fmt.Printf("Control gRPC server listening at %s:%s\n", hostname, serverControlPort)
+
+	// Začnemo s streženjem
+	if err := grpcServer.Serve(listener); err != nil {
+		panic(fmt.Sprintf("failed to serve: %v", err))
+	}
 
 }
 
