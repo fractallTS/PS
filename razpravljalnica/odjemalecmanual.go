@@ -1,6 +1,7 @@
 package main
 
 import (
+	controlPlane "api/razpravljalnica/protobufControlPlane"
 	razpravljalnica "api/razpravljalnica/protobufStorage"
 	"bufio"
 	"context"
@@ -25,7 +26,7 @@ func ClientManual(url string) {
 
 	// Vzpostavimo vmesnika gRPC
 	messageBoardClient := razpravljalnica.NewMessageBoardClient(conn)
-	controlPlaneClient := razpravljalnica.NewControlPlaneClient(conn)
+	controlPlaneClient := controlPlane.NewControlPlaneClient(conn)
 
 	// Nov bufio Reader instance
 	reader := bufio.NewReader(os.Stdin)
@@ -359,7 +360,7 @@ func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica
 }
 
 // Pridobimo stanje clustra
-func clusterState(client razpravljalnica.ControlPlaneClient) {
+func clusterState(client controlPlane.ControlPlaneClient) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
@@ -371,6 +372,7 @@ func clusterState(client razpravljalnica.ControlPlaneClient) {
 	fmt.Println("\n=== Cluster State ===")
 	fmt.Printf("   Head: %s at %s\n", state.Head.NodeId, state.Head.Address)
 	fmt.Printf("   Tail: %s at %s\n", state.Tail.NodeId, state.Tail.Address)
+	fmt.Printf("   Sub: %s at %s\n", state.Sub.NodeId, state.Sub.Address)
 	fmt.Println()
 }
 

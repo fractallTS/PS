@@ -4,6 +4,7 @@
 package main
 
 import (
+	controlPlane "api/razpravljalnica/protobufControlPlane"
 	razpravljalnica "api/razpravljalnica/protobufStorage"
 	"context"
 	"fmt"
@@ -28,7 +29,7 @@ func Client(url string) {
 
 	// Vzpostavimo vmesnika gRPC
 	messageBoardClient := razpravljalnica.NewMessageBoardClient(conn)
-	controlPlaneClient := razpravljalnica.NewControlPlaneClient(conn)
+	controlPlaneClient := controlPlane.NewControlPlaneClient(conn)
 
 	// Vzpostavimo izvajalno okolje
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
@@ -45,6 +46,7 @@ func Client(url string) {
 	} else {
 		fmt.Printf("   Head: %s at %s\n", clusterState.Head.NodeId, clusterState.Head.Address)
 		fmt.Printf("   Tail: %s at %s\n", clusterState.Tail.NodeId, clusterState.Tail.Address)
+		fmt.Printf("   Sub: %s at %s\n", clusterState.Sub.NodeId, clusterState.Sub.Address)
 	}
 	fmt.Println()
 

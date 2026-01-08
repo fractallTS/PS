@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	controlPlane "api/razpravljalnica/protobufControlPlane"
 	razpravljalnica "api/razpravljalnica/protobufStorage"
 )
 
@@ -275,37 +277,134 @@ func generateToken() (string, error) {
 
 // controlPlaneServer implementira ControlPlane service
 type controlPlaneServer struct {
-	razpravljalnica.UnimplementedControlPlaneServer
-	headAddress string
-	tailAddress string
+	controlPlane.UnimplementedControlPlaneServer
+	nodes               map[int64]*NodeRegistration
+	mu                  sync.RWMutex
+	subscriptionCounter int64
+}
+
+type NodeRegistration struct {
+	NodeId         int64
+	Role           string
+	ClientAddress  string
+	ControlAddress string
+	DataAddress    string
+	Position       int64
 }
 
 // NewControlPlaneServer ustvari nov strežnik za ControlPlane
 func NewControlPlaneServer(headAddress, tailAddress string) *controlPlaneServer {
 	return &controlPlaneServer{
-		headAddress: headAddress,
-		tailAddress: tailAddress,
+		nodes: make(map[int64]*NodeRegistration),
 	}
 }
 
-// GetClusterState vrne stanje klastra (head in tail vozlišča)
-func (s *controlPlaneServer) GetClusterState(ctx context.Context, req *emptypb.Empty) (*razpravljalnica.GetClusterStateResponse, error) {
+// GetClusterState vrne stanje klastra (head, tail in sub vozlišča)
+func (s *controlPlaneServer) GetClusterState(ctx context.Context, req *emptypb.Empty) (*controlPlane.GetClusterStateResponse, error) {
 	hostname, _ := os.Hostname()
-
-	head := &razpravljalnica.NodeInfo{
+	numNodes := int64(len(s.nodes))
+	subIndex := s.subscriptionCounter % numNodes
+	s.mu.RLock()
+	head := &controlPlane.NodeInfo{
 		NodeId:  hostname + "-head",
-		Address: s.headAddress,
+		Address: s.nodes[0].ClientAddress,
 	}
 
-	tail := &razpravljalnica.NodeInfo{
+	tail := &controlPlane.NodeInfo{
 		NodeId:  hostname + "-tail",
-		Address: s.tailAddress,
+		Address: s.nodes[numNodes-1].ClientAddress,
 	}
 
-	return &razpravljalnica.GetClusterStateResponse{
+	sub := &controlPlane.NodeInfo{
+		NodeId:  hostname + "-sub",
+		Address: s.nodes[subIndex].ClientAddress,
+	}
+	s.mu.RUnlock()
+	return &controlPlane.GetClusterStateResponse{
 		Head: head,
 		Tail: tail,
+		Sub:  sub,
 	}, nil
+}
+
+func (s *controlPlaneServer) RegisterNode(ctx context.Context, req *controlPlane.RegisterNodeRequest) (*controlPlane.RegisterNodeResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nodeID := int64(len(s.nodes))
+
+	if req.Role == "head" && len(s.nodes) > 0 {
+		if s.nodes[0].Role == "head" {
+			return nil, status.Error(codes.AlreadyExists, "head node already registered")
+		} else {
+			s.nodes[0], s.nodes[nodeID] = s.nodes[nodeID], s.nodes[0] // swap head and node at position 0
+			s.nodes[0].Position = 0
+			s.nodes[nodeID].Position = nodeID
+			nodeID = 0
+		}
+	} else if req.Role == "tail" && s.nodes[nodeID-1].Role == "tail" {
+		return nil, status.Error(codes.AlreadyExists, "tail node already registered")
+	} else if req.Role == "chain" && s.nodes[nodeID-1].Role == "tail" {
+		s.nodes[nodeID-1], s.nodes[nodeID] = s.nodes[nodeID], s.nodes[nodeID-1] // swap chain and tail node at position nodeID-1
+		s.nodes[nodeID-1].Position = nodeID - 1
+		s.nodes[nodeID].Position = nodeID
+		nodeID = nodeID - 1
+	}
+
+	s.nodes[nodeID] = &NodeRegistration{
+		NodeId:         int64(len(s.nodes)),
+		Role:           req.Role,
+		ClientAddress:  req.ClientAddress,
+		ControlAddress: req.ControlAddress,
+		DataAddress:    req.DataAddress,
+		Position:       nodeID,
+	}
+	return &controlPlane.RegisterNodeResponse{
+		AssignedPosition: nodeID,
+		Success:          true,
+	}, nil
+}
+
+func (s *controlPlaneServer) GetNextNode(ctx context.Context, req *controlPlane.GetNextNodeRequest) (*controlPlane.NodeInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	node := s.nodes[req.NodeId]
+	if node == nil {
+		return nil, status.Error(codes.NotFound, "node not found")
+	}
+	return &controlPlane.NodeInfo{
+		NodeId:  node.NodeId,
+		Address: node.DataAddress,
+	}, nil
+}
+
+func HeadServer(clientPort, controlPort, dataPort, serverControlPort string) {
+	role := "head"
+	clientGrpc := grpc.NewServer()
+	controlGrpc := grpc.NewServer()
+	dataGrpc := grpc.NewServer()
+
+	messageBoardSrv := NewMessageBoardServer()
+
+}
+
+func TailServer(clientPort, controlPort, dataPort, serverControlPort string) {
+	role := "tail"
+	clientGrpc := grpc.NewServer()
+	controlGrpc := grpc.NewServer()
+	dataGrpc := grpc.NewServer()
+}
+
+func ChainServer(clientPort, controlPort, dataPort, serverControlPort string) {
+	role := "chain"
+	clientGrpc := grpc.NewServer()
+	controlGrpc := grpc.NewServer()
+	dataGrpc := grpc.NewServer()
+}
+
+func ControlServer(clientControlPort, serverControlPort string) {
+
 }
 
 // StartServer zažene gRPC strežnik
@@ -319,7 +418,7 @@ func StartServer(address string) {
 
 	// Registriramo storitve
 	razpravljalnica.RegisterMessageBoardServer(grpcServer, messageBoardSrv)
-	razpravljalnica.RegisterControlPlaneServer(grpcServer, controlPlaneSrv)
+	controlPlane.RegisterControlPlaneServer(grpcServer, controlPlaneSrv)
 
 	// Odpremo vtičnico
 	listener, err := net.Listen("tcp", address)

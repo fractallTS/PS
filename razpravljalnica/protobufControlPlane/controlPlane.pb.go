@@ -256,7 +256,7 @@ func (x *GetNextNodeRequest) GetNodeId() int64 {
 
 type NodeInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	NodeId        int64                  `protobuf:"varint,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	Address       string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -292,11 +292,11 @@ func (*NodeInfo) Descriptor() ([]byte, []int) {
 	return file_controlPlane_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *NodeInfo) GetNodeId() string {
+func (x *NodeInfo) GetNodeId() int64 {
 	if x != nil {
 		return x.NodeId
 	}
-	return ""
+	return 0
 }
 
 func (x *NodeInfo) GetAddress() string {
@@ -327,7 +327,7 @@ const file_controlPlane_proto_rawDesc = "" +
 	"\x12GetNextNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\x03R\x06nodeId\"=\n" +
 	"\bNodeInfo\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
+	"\anode_id\x18\x01 \x01(\x03R\x06nodeId\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress2\x8f\x02\n" +
 	"\fControlPlane\x12[\n" +
 	"\fRegisterNode\x12$.razpravljalnica.RegisterNodeRequest\x1a%.razpravljalnica.RegisterNodeResponse\x12S\n" +

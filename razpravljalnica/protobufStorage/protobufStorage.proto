@@ -159,17 +159,3 @@ message MessageEvent {
   Message message = 3;
   google.protobuf.Timestamp event_at = 4; // timestamp of the event
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Control plane
-////////////////////////////////////////////////////////////////////////////////
-
-// Return the the head and the tail node address
-service ControlPlane {
-  rpc GetClusterState(google.protobuf.Empty) returns (GetClusterStateResponse);
-}
-
-message GetClusterStateResponse {
-  NodeInfo head = 1;
-  NodeInfo tail = 2;
-}
