@@ -12,14 +12,17 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	controlPlane "api/razpravljalnica/protobufControlPlane"
+	dataPlane "api/razpravljalnica/protobufDataPlane"
 	razpravljalnica "api/razpravljalnica/protobufStorage"
 )
 
@@ -162,6 +165,8 @@ func (s *messageBoardServer) GetMessages(ctx context.Context, req *razpravljalni
 
 // GetSubscriptionNode vrne vozlišče, na katerega se lahko odpre naročnina
 // Za enostavno implementacijo (ocena 6-7) vedno vrnemo trenutni strežnik
+// client dobi subnode pri klicu getClusterState iz contol plane
+/*
 func (s *messageBoardServer) GetSubscriptionNode(ctx context.Context, req *razpravljalnica.SubscriptionNodeRequest) (*razpravljalnica.SubscriptionNodeResponse, error) {
 	// Generiramo token za naročnino
 	token, err := generateToken()
@@ -172,16 +177,20 @@ func (s *messageBoardServer) GetSubscriptionNode(ctx context.Context, req *razpr
 	// Za enostavno implementacijo vrnemo trenutni strežnik
 	// V implementaciji z verižno replikacijo bi tukaj izbrali vozlišče glede na uravnoteženje obremenitve
 	hostname, _ := os.Hostname()
-	nodeInfo := &razpravljalnica.NodeInfo{
+	nodeInfo := &controlPlane.NodeInfo{
 		NodeId:  hostname,
 		Address: "localhost:50051", // To bo konfiguracijski parameter
 	}
 
 	return &razpravljalnica.SubscriptionNodeResponse{
 		SubscribeToken: token,
-		Node:           nodeInfo,
+		Node: &razpravljalnica.NodeInfo{
+			NodeId:  nodeInfo.NodeId,
+			Address: nodeInfo.Address,
+		},
 	}, nil
 }
+*/
 
 // SubscribeTopic omogoča naročnino na dogodke v temah
 func (s *messageBoardServer) SubscribeTopic(req *razpravljalnica.SubscribeTopicRequest, stream razpravljalnica.MessageBoard_SubscribeTopicServer) error {
@@ -346,36 +355,58 @@ func (s *controlPlaneServer) RegisterNode(ctx context.Context, req *controlPlane
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	nodeID := int64(len(s.nodes))
+	numNodes := int64(len(s.nodes))
+	position := numNodes // Dodamo na koncu
 
-	if req.Role == "head" && len(s.nodes) > 0 {
-		if s.nodes[0].Role == "head" {
-			return nil, status.Error(codes.AlreadyExists, "head node already registered")
-		} else {
-			s.nodes[0], s.nodes[nodeID] = s.nodes[nodeID], s.nodes[0] // swap head and node at position 0
-			s.nodes[0].Position = 0
-			s.nodes[nodeID].Position = nodeID
-			nodeID = 0
+	// Samo en head, zato preverimo če že obstaja
+	if req.Role == "head" {
+		for _, n := range s.nodes {
+			if n.Role == "head" {
+				return nil, status.Error(codes.AlreadyExists, "head node already registered")
+			}
 		}
-	} else if req.Role == "tail" && s.nodes[nodeID-1].Role == "tail" {
-		return nil, status.Error(codes.AlreadyExists, "tail node already registered")
-	} else if req.Role == "chain" && s.nodes[nodeID-1].Role == "tail" {
-		s.nodes[nodeID-1], s.nodes[nodeID] = s.nodes[nodeID], s.nodes[nodeID-1] // swap chain and tail node at position nodeID-1
-		s.nodes[nodeID-1].Position = nodeID - 1
-		s.nodes[nodeID].Position = nodeID
-		nodeID = nodeID - 1
+		// če še ne obstaja, dobi pozicijo 0
+		position = 0
+		// ostale node premaknemo za eno pozicijo naprej
+		for _, n := range s.nodes {
+			n.Position++
+		}
 	}
 
-	s.nodes[nodeID] = &NodeRegistration{
-		NodeId:         int64(len(s.nodes)),
+	// Samo en tail, zato preverimo če že obstaja
+	if req.Role == "tail" {
+		for _, n := range s.nodes {
+			if n.Role == "tail" {
+				return nil, status.Error(codes.AlreadyExists, "tail node already registered")
+			}
+		}
+		// Tail dobi končno pozicijo
+		position = numNodes
+	}
+
+	// Če dodajamo chain node, ga damo pred tail in premaknemo tail naprej
+	if req.Role == "chain" && numNodes > 0 {
+		lastPos := numNodes - 1
+		for _, n := range s.nodes {
+			if n.Position == lastPos && n.Role == "tail" {
+				// tail premaknemo naprej
+				n.Position++
+				position = lastPos
+				break
+			}
+		}
+	}
+
+	s.nodes[req.NodeId] = &NodeRegistration{
+		NodeId:         req.NodeId,
 		Role:           req.Role,
 		ClientAddress:  req.ClientAddress,
 		ControlAddress: req.ControlAddress,
 		DataAddress:    req.DataAddress,
-		Position:       nodeID,
+		Position:       position,
 	}
 	return &controlPlane.RegisterNodeResponse{
-		AssignedPosition: nodeID,
+		AssignedPosition: position,
 		Success:          true,
 	}, nil
 }
@@ -401,28 +432,314 @@ func (s *controlPlaneServer) GetNextNode(ctx context.Context, req *controlPlane.
 	return nil, status.Error(codes.NotFound, "next node not found")
 }
 
+// forwardUpdate posreduje posodobitveno operacijo naslednjemu vozlišču v verigi
+// Kliče se samo iz head vozlišč -> aka start the propagation
+func (s *Server) forwardUpdate(op razpravljalnica.OpType, msg *razpravljalnica.Message) error {
+	s.nextNodeMutex.RLock()
+	client := s.nextNodeClient
+	s.nextNodeMutex.RUnlock()
+
+	if client == nil {
+		if s.role == "tail" {
+			// Če smo tail, ni naslednjega vozlišča
+			return nil
+		}
+		return fmt.Errorf("no next node client available")
+	}
+
+	// Pridobimo naslednjo zaporedno številko
+	s.sequenceMutex.Lock()
+	seqNum := s.sequenceNumber
+	s.sequenceNumber++
+	s.sequenceMutex.Unlock()
+
+	// Ustvarimo zahtevo za posodobitev
+	req := &dataPlane.UpdateRequest{
+		SequenceNumber: seqNum,
+		Op:             op,
+		Message:        msg,
+	}
+
+	// Pošljemo zahtevo naslednjemu vozlišču
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ack, err := client.ForwardUpdate(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to forward update to next node: %v", err)
+	}
+	if !ack.Success {
+		return fmt.Errorf("next node reported failure in processing update")
+	}
+	fmt.Printf("[%s-%d] Forwarded %s operation for message %d to next node\n", s.role, s.NodeId, op.String(), msg.Id)
+	return nil
+}
+
+// ForwardUpdate prejme posodobitveno operacijo od prejšnjega vozlišča in posodobi lokalno shrambo
+// Potem posreduje naprej, če ni tail, in čaka na ack od naslednjega vozlišča (back propagation)
+func (s *Server) ForwardUpdate(ctx context.Context, req *dataPlane.UpdateRequest) (*dataPlane.AcknowledgeResponse, error) {
+	fmt.Printf("[%s-%d] Received forwarded %s operation for message %d\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+
+	// Najprej updatamo lokalno shrambo
+	err := s.applyUpdate(req)
+	if err != nil {
+		fmt.Printf("[%s-%d] Failed to apply update: %v\n", s.role, s.NodeId, err)
+		return &dataPlane.AcknowledgeResponse{
+			SequenceNumber: req.SequenceNumber,
+			Success:        false,
+		}, err
+	}
+
+	// Če nismo tail posredujemo naprej in čakamo na ack
+	if s.role != "tail" {
+		s.nextNodeMutex.RLock()
+		client := s.nextNodeClient
+		s.nextNodeMutex.RUnlock()
+
+		if client != nil {
+			// pošljemo update msg naprej in čakamo na ack
+			ackFromNext, err := client.ForwardUpdate(ctx, req)
+			if err != nil {
+				fmt.Printf("[%s-%d] Failed to forward update to next node: %v\n", s.role, s.NodeId, err)
+				return &dataPlane.AcknowledgeResponse{
+					SequenceNumber: req.SequenceNumber,
+					Success:        false,
+				}, err
+			}
+			// Če je naslednje vozlišče vrnilo napako, vrnemo napako
+			if !ackFromNext.Success {
+				fmt.Printf("[%s-%d] Next node failed to process update\n", s.role, s.NodeId)
+				return &dataPlane.AcknowledgeResponse{
+					SequenceNumber: req.SequenceNumber,
+					Success:        false,
+				}, nil
+			}
+			fmt.Printf("[%s-%d] Forwarded %s operation for message %d to next node (ack received)\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+		}
+	} else {
+		// Tail je konec -> izpiše info na terminal in vrne ack
+		fmt.Printf("[%s-%d] Applied %s operation for message %d (tail - no forward)\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+	}
+
+	return &dataPlane.AcknowledgeResponse{
+		SequenceNumber: req.SequenceNumber,
+		Success:        true,
+	}, nil
+
+}
+
+// applyUpdate posodobi lokalno shrambo
+// TODO: dejansko klicati storage da shrani update -> trenutno smao print
+func (s *Server) applyUpdate(req *dataPlane.UpdateRequest) error {
+	msg := req.Message
+	switch req.Op {
+	case razpravljalnica.OpType_OP_POST:
+		fmt.Printf("[%s-%d] Applying POST for message %d\n", s.role, s.NodeId, msg.Id)
+		return nil
+	case razpravljalnica.OpType_OP_UPDATE:
+		fmt.Printf("[%s-%d] Applying UPDATE for message %d\n", s.role, s.NodeId, msg.Id)
+		return nil
+	case razpravljalnica.OpType_OP_DELETE:
+		fmt.Printf("[%s-%d] Applying DELETE for message %d\n", s.role, s.NodeId, msg.Id)
+		return nil
+	case razpravljalnica.OpType_OP_LIKE:
+		fmt.Printf("[%s-%d] Applying LIKE for message %d\n", s.role, s.NodeId, msg.Id)
+		return nil
+	default:
+		return fmt.Errorf("unknown operation type: %v", req.Op)
+	}
+}
+
+// Storage functions that are overridden by streznik
+// Te funkcije kliče samo head volišče, ki potem posreduje update naprej
+// Client zahteva post na head, head updatira lokalno shrambo in potem posreduje naprej
+func (s *Server) PostMessage(ctx context.Context, req *razpravljalnica.PostMessageRequest) (*razpravljalnica.Message, error) {
+	// Updatamo lokalno shrambo
+	msg, err := s.messageBoardServer.PostMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Head posreduje update naprej
+	if s.role == "head" {
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_POST, msg)
+		if err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward post update: %v", err))
+		}
+	}
+
+	return msg, nil
+}
+
+func (s *Server) UpdateMessage(ctx context.Context, req *razpravljalnica.UpdateMessageRequest) (*razpravljalnica.Message, error) {
+	// Updatamo lokalno shrambo
+	msg, err := s.messageBoardServer.UpdateMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Head posreduje update naprej
+	if s.role == "head" {
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_UPDATE, msg)
+		if err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward update update: %v", err))
+		}
+	}
+
+	return msg, nil
+}
+
+func (s *Server) DeleteMessage(ctx context.Context, req *razpravljalnica.DeleteMessageRequest) (*emptypb.Empty, error) {
+	// Updatamo lokalno shrambo
+	resp, err := s.messageBoardServer.DeleteMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Head posreduje update naprej
+	if s.role == "head" {
+		// Ustvarimo message objekt za posredovanje
+		msg := &razpravljalnica.Message{
+			Id:      req.MessageId,
+			TopicId: req.TopicId,
+			UserId:  req.UserId,
+		}
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_DELETE, msg)
+		if err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward delete update: %v", err))
+		}
+	}
+
+	return resp, nil
+}
+
+func (s *Server) LikeMessage(ctx context.Context, req *razpravljalnica.LikeMessageRequest) (*razpravljalnica.Message, error) {
+	// Updatamo lokalno shrambo
+	msg, err := s.messageBoardServer.LikeMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Head posreduje update naprej
+	if s.role == "head" {
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_LIKE, msg)
+		if err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward like update: %v", err))
+		}
+	}
+
+	return msg, nil
+}
+
+// Server struct za podatkovno ravnino iz role izvemo ali je head, tail ali chain
+type Server struct {
+	*messageBoardServer
+	dataPlane.UnimplementedDataPlaneServer
+
+	role          string
+	NodeId        int64
+	clientAddress string
+	dataAddress   string
+
+	// Povezava na control plane
+	controlPlaneAddress string
+	controlPlaneClient  controlPlane.ControlPlaneClient
+	controlConnection   *grpc.ClientConn
+	// Povezava na naslednje vozlišče v verigi
+	nextNodeClient  dataPlane.DataPlaneClient
+	nextNodeAddress string
+	nextNodeMutex   sync.RWMutex
+	nextNodeConn    *grpc.ClientConn
+
+	// Zaporedna številka sporočil za verižno replikacijo
+	sequenceNumber int64
+	sequenceMutex  sync.Mutex
+}
+
+// NewServer ustvari nov strežnik za podatkovno ravnino
+func NewServer(role string, nodeId int64, clientAddress, dataAddress, controlPlaneAddress string) *Server {
+	return &Server{
+		messageBoardServer:  NewMessageBoardServer(),
+		role:                role,
+		NodeId:              nodeId,
+		clientAddress:       clientAddress,
+		dataAddress:         dataAddress,
+		controlPlaneAddress: controlPlaneAddress,
+		sequenceNumber:      1,
+	}
+}
+
+// connectToControlPlane vzpostavi povezavo s control plane
+func (s *Server) connectToControlPlane() error {
+	conn, err := grpc.NewClient(s.controlPlaneAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect to control plane: %v", err)
+	}
+	s.controlConnection = conn
+	s.controlPlaneClient = controlPlane.NewControlPlaneClient(conn)
+	fmt.Printf("Connected to control plane at %s\n", s.controlPlaneAddress)
+	return nil
+}
+
+// registerWithControlPlane registrira vozlišče pri control plane
+func (s *Server) registerWithControlPlane() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := s.controlPlaneClient.RegisterNode(ctx, &controlPlane.RegisterNodeRequest{
+		NodeId:         s.NodeId,
+		Role:           s.role,
+		ClientAddress:  s.clientAddress,
+		ControlAddress: "",
+		DataAddress:    s.dataAddress,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to register with control plane: %v", err)
+	}
+	fmt.Printf("[%s-%d] Registered at position %d\n", s.role, s.NodeId, resp.AssignedPosition)
+	return nil
+}
+
+func (s *Server) discoverNextNode() error {
+	// Ce je tail, ni naslednjega vozlišča
+	if s.role == "tail" {
+		fmt.Printf("[%s-%d] No next node (tail)\n", s.role, s.NodeId)
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Pridobimo informacije o naslednjem vozlišču iz control plane
+	resp, err := s.controlPlaneClient.GetNextNode(ctx, &controlPlane.GetNextNodeRequest{
+		NodeId: s.NodeId,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get next node from control plane: %v", err)
+	}
+	// Vzpostavimo povezavo z naslednjim vozliščem
+	conn, err := grpc.NewClient(resp.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect to next node at %s: %v", resp.Address, err)
+	}
+
+	s.nextNodeMutex.Lock()
+	s.nextNodeAddress = resp.Address
+	s.nextNodeConn = conn
+	s.nextNodeClient = dataPlane.NewDataPlaneClient(conn)
+	s.nextNodeMutex.Unlock()
+	fmt.Printf("[%s-%d] Discovered next node at %s\n", s.role, s.NodeId, s.nextNodeAddress)
+	return nil
+}
+
 func HeadServer(clientPort, controlPort, dataPort, serverControlPort string) {
-	role := "head"
-	clientGrpc := grpc.NewServer()
-	controlGrpc := grpc.NewServer()
-	dataGrpc := grpc.NewServer()
-
-	messageBoardSrv := NewMessageBoardServer()
-
+	StartServer("head", clientPort, dataPort, serverControlPort)
 }
 
 func TailServer(clientPort, controlPort, dataPort, serverControlPort string) {
-	role := "tail"
-	clientGrpc := grpc.NewServer()
-	controlGrpc := grpc.NewServer()
-	dataGrpc := grpc.NewServer()
+	StartServer("tail", clientPort, dataPort, serverControlPort)
 }
-
 func ChainServer(clientPort, controlPort, dataPort, serverControlPort string) {
-	role := "chain"
-	clientGrpc := grpc.NewServer()
-	controlGrpc := grpc.NewServer()
-	dataGrpc := grpc.NewServer()
+	StartServer("chain", clientPort, dataPort, serverControlPort)
 }
 
 func ControlServer(clientControlPort, serverControlPort string) {
@@ -441,7 +758,7 @@ func ControlServer(clientControlPort, serverControlPort string) {
 	}
 
 	hostname, _ := os.Hostname()
-	fmt.Printf("Control gRPC server listening at %s:%s\n", hostname, serverControlPort)
+	fmt.Printf("Control gRPC server listening at %s %s\n", hostname, serverControlPort)
 
 	// Začnemo s streženjem
 	if err := grpcServer.Serve(listener); err != nil {
@@ -450,30 +767,67 @@ func ControlServer(clientControlPort, serverControlPort string) {
 
 }
 
-// StartServer zažene gRPC strežnik
-func StartServer(address string) {
-	// Pripravimo strežnik gRPC
-	grpcServer := grpc.NewServer()
+// StartServer zažene strežnik z določeno vlogo in naslovi
+func StartServer(role, clientPort, dataPort, controlPlaneAddress string) {
+	// ID
+	nodeID := time.Now().UnixNano()
 
-	// Pripravimo strežnika za MessageBoard in ControlPlane
-	messageBoardSrv := NewMessageBoardServer()
-	controlPlaneSrv := NewControlPlaneServer(address, address) // Za enostavno implementacijo sta head in tail enaka
+	// Instanca serverja
+	server := NewServer(role, nodeID, "localhost:"+clientPort, "localhost:"+dataPort, controlPlaneAddress)
+
+	// Povežemo in registriramo se s control plane
+	err := server.connectToControlPlane()
+	if err != nil {
+		panic(fmt.Sprintf("failed to connect to control plane: %v", err))
+	}
+	defer server.controlConnection.Close()
+
+	err = server.registerWithControlPlane()
+	if err != nil {
+		panic(fmt.Sprintf("failed to register with control plane: %v", err))
+	}
+
+	// Odkrijemo naslednje vozlišče v verigi
+	time.Sleep(2 * time.Second) // Počakamo malo, da se ostali nodi tudi registrirajo
+	err = server.discoverNextNode()
+	if err != nil {
+		panic(fmt.Sprintf("failed to discover next node: %v", err))
+	}
+
+	// naredimo gRPC strežnike za clienta in dataPlane
+	clientGrpc := grpc.NewServer()
+	dataGrpc := grpc.NewServer()
 
 	// Registriramo storitve
-	razpravljalnica.RegisterMessageBoardServer(grpcServer, messageBoardSrv)
-	controlPlane.RegisterControlPlaneServer(grpcServer, controlPlaneSrv)
+	razpravljalnica.RegisterMessageBoardServer(clientGrpc, server)
+	dataPlane.RegisterDataPlaneServer(dataGrpc, server)
 
-	// Odpremo vtičnico
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		panic(fmt.Sprintf("failed to listen: %v", err))
-	}
+	// Odpremo vtičnice
+	go func() {
+		listener, err := net.Listen("tcp", ":"+clientPort)
+		if err != nil {
+			panic(fmt.Sprintf("failed to listen on client port: %v", err))
+		}
+		fmt.Printf("[%s-%d] Client gRPC server listening at clientPort:%s\n", role, nodeID, clientPort)
+		if err := clientGrpc.Serve(listener); err != nil {
+			panic(fmt.Sprintf("failed to serve client gRPC: %v", err))
+		}
+	}()
 
-	hostname, _ := os.Hostname()
-	fmt.Printf("gRPC server listening at %s:%s\n", hostname, address)
+	// Data plane strežnik
+	go func() {
+		listener, err := net.Listen("tcp", ":"+dataPort)
+		if err != nil {
+			panic(fmt.Sprintf("failed to listen on data port: %v", err))
+		}
+		fmt.Printf("[%s-%d] Data gRPC server listening at dataPort:%s\n", role, nodeID, dataPort)
+		if err := dataGrpc.Serve(listener); err != nil {
+			panic(fmt.Sprintf("failed to serve data gRPC: %v", err))
+		}
+	}()
 
-	// Začnemo s streženjem
-	if err := grpcServer.Serve(listener); err != nil {
-		panic(fmt.Sprintf("failed to serve: %v", err))
-	}
+	fmt.Println("Server startup successfull")
+	// Blokirmo glavno nit da se ne konča
+	select {}
+
 }

@@ -15,18 +15,40 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func ClientManual(url string) {
-	//vzpostavimo povezavo s strežnikom
-	fmt.Printf("gRPC client connecting to %v\n", url)
-	conn, err := grpc.NewClient(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func ClientManual(controlURL string) {
+	// Najprej se povežemo na control plane in preberemo stanje gruče
+	fmt.Printf("gRPC control plane connecting to %v\n", controlURL)
+	controlConn, err := grpc.NewClient(controlURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(err)
 	}
-	defer conn.Close()
+	defer controlConn.Close()
 
-	// Vzpostavimo vmesnika gRPC
-	messageBoardClient := razpravljalnica.NewMessageBoardClient(conn)
-	controlPlaneClient := controlPlane.NewControlPlaneClient(conn)
+	controlPlaneClient := controlPlane.NewControlPlaneClient(controlConn)
+
+	stateCtx, stateCancel := context.WithTimeout(context.Background(), time.Second*10)
+	initialState, err := controlPlaneClient.GetClusterState(stateCtx, &emptypb.Empty{})
+	stateCancel()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Cluster state: head=%d at %s, sub=%d at %s\n", initialState.Head.NodeId, initialState.Head.Address, initialState.Sub.NodeId, initialState.Sub.Address)
+
+	headConn, err := grpc.NewClient(initialState.Head.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	defer headConn.Close()
+
+	subConn, err := grpc.NewClient(initialState.Sub.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	defer subConn.Close()
+
+	headClient := razpravljalnica.NewMessageBoardClient(headConn)
+	subClient := razpravljalnica.NewMessageBoardClient(subConn)
 
 	// Nov bufio Reader instance
 	reader := bufio.NewReader(os.Stdin)
@@ -37,7 +59,7 @@ func ClientManual(url string) {
 	fmt.Print("Enter username: ")
 	username, _ := reader.ReadString('\n')
 	username = strings.TrimSpace(username)
-	user := createUser(messageBoardClient, username)
+	user := createUser(headClient, username)
 
 	fmt.Println("Type 'h' for help")
 
@@ -62,45 +84,45 @@ func ClientManual(url string) {
 				fmt.Println("Usage: createtopic <name>")
 				break
 			}
-			createTopic(messageBoardClient, strings.Join(parts[1:], " "))
+			createTopic(headClient, strings.Join(parts[1:], " "))
 		case "listtopics":
-			listTopics(messageBoardClient)
+			listTopics(headClient)
 		case "post":
 			if len(parts) < 3 {
 				fmt.Println("Usage: post <topicID> <message text>")
 				break
 			}
-			postMessage(messageBoardClient, user, parts[1], strings.Join(parts[2:], " "))
+			postMessage(headClient, user, parts[1], strings.Join(parts[2:], " "))
 		case "getmessages":
 			if len(parts) < 2 {
 				fmt.Println("Usage: getmessages <topicID>")
 				break
 			}
-			getMessages(messageBoardClient, parts[1])
+			getMessages(headClient, parts[1])
 		case "like":
 			if len(parts) < 3 {
 				fmt.Println("Usage: like <topicID> <messageID>")
 				break
 			}
-			likeMessage(messageBoardClient, user, parts[1], parts[2])
+			likeMessage(headClient, user, parts[1], parts[2])
 		case "update":
 			if len(parts) < 4 {
 				fmt.Println("Usage: update <topicID> <messageID> <new text>")
 				break
 			}
-			updateMessage(messageBoardClient, user, parts[1], parts[2], strings.Join(parts[3:], " "))
+			updateMessage(headClient, user, parts[1], parts[2], strings.Join(parts[3:], " "))
 		case "delete":
 			if len(parts) < 3 {
 				fmt.Println("Usage: delete <topicID> <messageID>")
 				break
 			}
-			deleteMessage(messageBoardClient, user, parts[1], parts[2])
+			deleteMessage(headClient, user, parts[1], parts[2])
 		case "sub":
 			if len(parts) < 2 {
 				fmt.Println("Usage: sub <topicID>")
 				break
 			}
-			subToTopic(messageBoardClient, user, parts[1])
+			subToTopic(subClient, user, parts[1], initialState.Sub.NodeId, initialState.Sub.Address)
 		case "clusterstate":
 			clusterState(controlPlaneClient)
 		case "exit", "quit":
@@ -297,38 +319,23 @@ func deleteMessage(client razpravljalnica.MessageBoardClient, user *razpravljaln
 	fmt.Printf("Deleted message ID=%d\n", msgID)
 }
 
-// Naročnina na dogodke iz teme
-func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr string) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-
+// Naročnina na dogodke iz teme; povežemo se direktno na sub node iz control plane
+func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr string, subNodeID int64, subNodeAddress string) {
 	topicID := parseInt64(topicIDStr)
 	if topicID == -1 {
 		return
 	}
 
-	fmt.Printf("Subscribing to topic ID=%d...\n", topicID)
-
-	subNodeResp, err := client.GetSubscriptionNode(ctx, &razpravljalnica.SubscriptionNodeRequest{
-		UserId:  user.Id,
-		TopicId: []int64{topicID},
-	})
-	if err != nil {
-		fmt.Printf("Error getting subscription node: %v\n", err)
-		return
-	}
-
-	fmt.Printf("Subscription node: %s at %s\n", subNodeResp.Node.NodeId, subNodeResp.Node.Address)
+	fmt.Printf("Subscribing to topic ID=%d via %d at %s...\n", topicID, subNodeID, subNodeAddress)
 	fmt.Println("Waiting for events (press Ctrl+C to stop)...")
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stream, err := client.SubscribeTopic(subCtx, &razpravljalnica.SubscribeTopicRequest{
-		TopicId:        []int64{topicID},
-		UserId:         user.Id,
-		FromMessageId:  0,
-		SubscribeToken: subNodeResp.SubscribeToken,
+		TopicId:       []int64{topicID},
+		UserId:        user.Id,
+		FromMessageId: 0,
 	})
 	if err != nil {
 		fmt.Printf("Error subscribing: %v\n", err)
@@ -370,9 +377,9 @@ func clusterState(client controlPlane.ControlPlaneClient) {
 		return
 	}
 	fmt.Println("\n=== Cluster State ===")
-	fmt.Printf("   Head: %s at %s\n", state.Head.NodeId, state.Head.Address)
-	fmt.Printf("   Tail: %s at %s\n", state.Tail.NodeId, state.Tail.Address)
-	fmt.Printf("   Sub: %s at %s\n", state.Sub.NodeId, state.Sub.Address)
+	fmt.Printf("   Head: %d at %s\n", state.Head.NodeId, state.Head.Address)
+	fmt.Printf("   Tail: %d at %s\n", state.Tail.NodeId, state.Tail.Address)
+	fmt.Printf("   Sub: %d at %s\n", state.Sub.NodeId, state.Sub.Address)
 	fmt.Println()
 }
 

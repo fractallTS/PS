@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package razpravljalnica;
 
-option go_package = "/razpravljalnica";
+option go_package = "api/razpravljalnica/protobufControlPlane;razpravljalnica";
 
 import "google/protobuf/empty.proto";
 
