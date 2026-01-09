@@ -15,6 +15,7 @@ Osnova je narejena, manjka:
  - userji z istim imenom (trenutno ustvari nov userID), mogoče še možnost prijave z geslom
  - graceful exit za subscribe na odjemalcu
  - 2x like naj odstrani like
+ - test odjemalec je treba popravit
  - ...
 
 
