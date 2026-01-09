@@ -18,18 +18,47 @@ import (
 )
 
 // Client demonstrira uporabo vseh operacij Razpravljalnice
-func Client(url string) {
+func Client(controlURL string) {
 	// Vzpostavimo povezavo s strežnikom
-	fmt.Printf("gRPC client connecting to %v\n", url)
-	conn, err := grpc.NewClient(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	fmt.Printf("gRPC client connecting to %v\n", controlURL)
+	controlConn, err := grpc.NewClient(controlURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(err)
 	}
-	defer conn.Close()
+	defer controlConn.Close()
 
-	// Vzpostavimo vmesnika gRPC
-	messageBoardClient := razpravljalnica.NewMessageBoardClient(conn)
-	controlPlaneClient := controlPlane.NewControlPlaneClient(conn)
+	controlPlaneClient := controlPlane.NewControlPlaneClient(controlConn)
+
+	stateCtx, stateCancel := context.WithTimeout(context.Background(), time.Second*10)
+	initialState, err := controlPlaneClient.GetClusterState(stateCtx, &emptypb.Empty{})
+	stateCancel()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Cluster state: head=%d at %s, sub=%d at %s\n", initialState.Head.NodeId, initialState.Head.Address, initialState.Sub.NodeId, initialState.Sub.Address)
+
+	headConn, err := grpc.NewClient(initialState.Head.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	defer headConn.Close()
+
+	subConn, err := grpc.NewClient(initialState.Sub.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	defer subConn.Close()
+
+	tailConn, err := grpc.NewClient(initialState.Tail.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	defer tailConn.Close()
+
+	headClient := razpravljalnica.NewMessageBoardClient(headConn)
+	tailClient := razpravljalnica.NewMessageBoardClient(tailConn)
+	subClient := razpravljalnica.NewMessageBoardClient(subConn)
 
 	// Vzpostavimo izvajalno okolje
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
@@ -44,21 +73,21 @@ func Client(url string) {
 	if err != nil {
 		fmt.Printf("Error getting cluster state: %v\n", err)
 	} else {
-		fmt.Printf("   Head: %s at %s\n", clusterState.Head.NodeId, clusterState.Head.Address)
-		fmt.Printf("   Tail: %s at %s\n", clusterState.Tail.NodeId, clusterState.Tail.Address)
-		fmt.Printf("   Sub: %s at %s\n", clusterState.Sub.NodeId, clusterState.Sub.Address)
+		fmt.Printf("   Head: %d at %s\n", clusterState.Head.NodeId, clusterState.Head.Address)
+		fmt.Printf("   Tail: %d at %s\n", clusterState.Tail.NodeId, clusterState.Tail.Address)
+		fmt.Printf("   Sub: %d at %s\n", clusterState.Sub.NodeId, clusterState.Sub.Address)
 	}
 	fmt.Println()
 
 	// 2. Ustvarimo uporabnike
 	fmt.Println("2. Creating users...")
-	user1, err := messageBoardClient.CreateUser(ctx, &razpravljalnica.CreateUserRequest{Name: "Alice"})
+	user1, err := headClient.CreateUser(ctx, &razpravljalnica.CreateUserRequest{Name: "Alice"})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create user1: %v", err))
 	}
 	fmt.Printf("   Created user: ID=%d, Name=%s\n", user1.Id, user1.Name)
 
-	user2, err := messageBoardClient.CreateUser(ctx, &razpravljalnica.CreateUserRequest{Name: "Bob"})
+	user2, err := headClient.CreateUser(ctx, &razpravljalnica.CreateUserRequest{Name: "Bob"})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create user2: %v", err))
 	}
@@ -67,13 +96,13 @@ func Client(url string) {
 
 	// 3. Ustvarimo teme
 	fmt.Println("3. Creating topics...")
-	topic1, err := messageBoardClient.CreateTopic(ctx, &razpravljalnica.CreateTopicRequest{Name: "Go Programming"})
+	topic1, err := headClient.CreateTopic(ctx, &razpravljalnica.CreateTopicRequest{Name: "Go Programming"})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create topic1: %v", err))
 	}
 	fmt.Printf("   Created topic: ID=%d, Name=%s\n", topic1.Id, topic1.Name)
 
-	topic2, err := messageBoardClient.CreateTopic(ctx, &razpravljalnica.CreateTopicRequest{Name: "Distributed Systems"})
+	topic2, err := headClient.CreateTopic(ctx, &razpravljalnica.CreateTopicRequest{Name: "Distributed Systems"})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create topic2: %v", err))
 	}
@@ -82,7 +111,7 @@ func Client(url string) {
 
 	// 4. Pridobimo vse teme
 	fmt.Println("4. Listing all topics...")
-	topicsResp, err := messageBoardClient.ListTopics(ctx, &emptypb.Empty{})
+	topicsResp, err := headClient.ListTopics(ctx, &emptypb.Empty{})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to list topics: %v", err))
 	}
@@ -94,7 +123,7 @@ func Client(url string) {
 
 	// 5. Objavimo sporočila
 	fmt.Println("5. Posting messages...")
-	msg1, err := messageBoardClient.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
+	msg1, err := headClient.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
 		TopicId: topic1.Id,
 		UserId:  user1.Id,
 		Text:    "Go is a great language for concurrent programming!",
@@ -104,7 +133,7 @@ func Client(url string) {
 	}
 	fmt.Printf("   Posted message: ID=%d, Text='%s'\n", msg1.Id, msg1.Text)
 
-	msg2, err := messageBoardClient.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
+	msg2, err := headClient.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
 		TopicId: topic1.Id,
 		UserId:  user2.Id,
 		Text:    "I agree! The goroutines make it very powerful.",
@@ -114,7 +143,7 @@ func Client(url string) {
 	}
 	fmt.Printf("   Posted message: ID=%d, Text='%s'\n", msg2.Id, msg2.Text)
 
-	msg3, err := messageBoardClient.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
+	msg3, err := headClient.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
 		TopicId: topic2.Id,
 		UserId:  user1.Id,
 		Text:    "Chain replication is an interesting approach to consistency.",
@@ -127,7 +156,7 @@ func Client(url string) {
 
 	// 6. Pridobimo sporočila iz teme
 	fmt.Println("6. Getting messages from topic...")
-	messagesResp, err := messageBoardClient.GetMessages(ctx, &razpravljalnica.GetMessagesRequest{
+	messagesResp, err := tailClient.GetMessages(ctx, &razpravljalnica.GetMessagesRequest{
 		TopicId:       topic1.Id,
 		FromMessageId: 0,
 		Limit:         10,
@@ -144,7 +173,7 @@ func Client(url string) {
 
 	// 7. Všečkajmo sporočilo
 	fmt.Println("7. Liking messages...")
-	likedMsg, err := messageBoardClient.LikeMessage(ctx, &razpravljalnica.LikeMessageRequest{
+	likedMsg, err := headClient.LikeMessage(ctx, &razpravljalnica.LikeMessageRequest{
 		TopicId:   topic1.Id,
 		MessageId: msg1.Id,
 		UserId:    user2.Id,
@@ -157,7 +186,7 @@ func Client(url string) {
 
 	// 8. Posodobimo sporočilo
 	fmt.Println("8. Updating message...")
-	updatedMsg, err := messageBoardClient.UpdateMessage(ctx, &razpravljalnica.UpdateMessageRequest{
+	updatedMsg, err := headClient.UpdateMessage(ctx, &razpravljalnica.UpdateMessageRequest{
 		TopicId:   topic1.Id,
 		UserId:    user1.Id,
 		MessageId: msg1.Id,
@@ -176,29 +205,15 @@ func Client(url string) {
 		defer wg.Done()
 		fmt.Println("9. Subscribing to topic events...")
 
-		// Najprej pridobimo vozlišče za naročnino
-		subCtx, subCancel := context.WithTimeout(context.Background(), time.Second*20)
-		defer subCancel()
-
-		subNodeResp, err := messageBoardClient.GetSubscriptionNode(subCtx, &razpravljalnica.SubscriptionNodeRequest{
-			UserId:  user1.Id,
-			TopicId: []int64{topic1.Id, topic2.Id},
-		})
-		if err != nil {
-			fmt.Printf("   Error getting subscription node: %v\n", err)
-			return
-		}
-		fmt.Printf("   Subscription node: %s at %s\n", subNodeResp.Node.NodeId, subNodeResp.Node.Address)
-
 		// Vzpostavimo naročnino (uporabimo isti strežnik za enostavnost)
 		subscribeCtx, subscribeCancel := context.WithCancel(context.Background())
 		defer subscribeCancel()
 
-		stream, err := messageBoardClient.SubscribeTopic(subscribeCtx, &razpravljalnica.SubscribeTopicRequest{
-			TopicId:        []int64{topic1.Id, topic2.Id},
-			UserId:         user1.Id,
-			FromMessageId:  0,
-			SubscribeToken: subNodeResp.SubscribeToken,
+		stream, err := subClient.SubscribeTopic(subscribeCtx, &razpravljalnica.SubscribeTopicRequest{
+			TopicId:       []int64{topic1.Id, topic2.Id},
+			UserId:        user1.Id,
+			FromMessageId: 0,
+			// SubscribeToken: initialState.Sub.SubscribeToken,
 		})
 		if err != nil {
 			fmt.Printf("   Error subscribing: %v\n", err)
@@ -249,7 +264,7 @@ func Client(url string) {
 	fmt.Println("10. Posting more messages while subscribed...")
 	time.Sleep(1 * time.Second)
 
-	msg4, err := messageBoardClient.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
+	msg4, err := headClient.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
 		TopicId: topic1.Id,
 		UserId:  user2.Id,
 		Text:    "Let's discuss channels and select statements!",
@@ -263,7 +278,7 @@ func Client(url string) {
 	time.Sleep(1 * time.Second)
 
 	// Všečkajmo še eno sporočilo
-	_, err = messageBoardClient.LikeMessage(ctx, &razpravljalnica.LikeMessageRequest{
+	_, err = headClient.LikeMessage(ctx, &razpravljalnica.LikeMessageRequest{
 		TopicId:   topic1.Id,
 		MessageId: msg2.Id,
 		UserId:    user1.Id,
@@ -278,7 +293,7 @@ func Client(url string) {
 
 	// 11. Izbrišemo sporočilo
 	fmt.Println("\n11. Deleting message...")
-	_, err = messageBoardClient.DeleteMessage(ctx, &razpravljalnica.DeleteMessageRequest{
+	_, err = headClient.DeleteMessage(ctx, &razpravljalnica.DeleteMessageRequest{
 		TopicId:   topic1.Id,
 		UserId:    user2.Id,
 		MessageId: msg4.Id,

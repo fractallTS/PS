@@ -342,6 +342,8 @@ func (s *controlPlaneServer) GetClusterState(ctx context.Context, req *emptypb.E
 	Subresponse := &controlPlane.NodeInfo{
 		NodeId:  sub.NodeId,
 		Address: sub.ClientAddress,
+		// Generiramo token za naročnino
+		// SubscribeToken: generateToken(),
 	}
 
 	return &controlPlane.GetClusterStateResponse{
@@ -434,7 +436,7 @@ func (s *controlPlaneServer) GetNextNode(ctx context.Context, req *controlPlane.
 
 // forwardUpdate posreduje posodobitveno operacijo naslednjemu vozlišču v verigi
 // Kliče se samo iz head vozlišč -> aka start the propagation
-func (s *Server) forwardUpdate(op razpravljalnica.OpType, msg *razpravljalnica.Message) error {
+func (s *Server) forwardUpdate(op razpravljalnica.OpType, msg *razpravljalnica.Message, user *razpravljalnica.User, topic *razpravljalnica.Topic) error {
 	s.nextNodeMutex.RLock()
 	client := s.nextNodeClient
 	s.nextNodeMutex.RUnlock()
@@ -458,6 +460,8 @@ func (s *Server) forwardUpdate(op razpravljalnica.OpType, msg *razpravljalnica.M
 		SequenceNumber: seqNum,
 		Op:             op,
 		Message:        msg,
+		User:           user,
+		Topic:          topic,
 	}
 
 	// Pošljemo zahtevo naslednjemu vozlišču
@@ -471,14 +475,29 @@ func (s *Server) forwardUpdate(op razpravljalnica.OpType, msg *razpravljalnica.M
 	if !ack.Success {
 		return fmt.Errorf("next node reported failure in processing update")
 	}
-	fmt.Printf("[%s-%d] Forwarded %s operation for message %d to next node\n", s.role, s.NodeId, op.String(), msg.Id)
+
+	// Log message based on operation type
+	if msg != nil {
+		fmt.Printf("[%s-%d] Forwarded %s operation for message %d to next node\n", s.role, s.NodeId, op.String(), msg.Id)
+	} else if user != nil {
+		fmt.Printf("[%s-%d] Forwarded %s operation for user %d to next node\n", s.role, s.NodeId, op.String(), user.Id)
+	} else if topic != nil {
+		fmt.Printf("[%s-%d] Forwarded %s operation for topic %d to next node\n", s.role, s.NodeId, op.String(), topic.Id)
+	}
 	return nil
 }
 
 // ForwardUpdate prejme posodobitveno operacijo od prejšnjega vozlišča in posodobi lokalno shrambo
 // Potem posreduje naprej, če ni tail, in čaka na ack od naslednjega vozlišča (back propagation)
 func (s *Server) ForwardUpdate(ctx context.Context, req *dataPlane.UpdateRequest) (*dataPlane.AcknowledgeResponse, error) {
-	fmt.Printf("[%s-%d] Received forwarded %s operation for message %d\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+	// Log message based on operation type
+	if req.Message != nil {
+		fmt.Printf("[%s-%d] Received forwarded %s operation for message %d\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+	} else if req.User != nil {
+		fmt.Printf("[%s-%d] Received forwarded %s operation for user %d (%s)\n", s.role, s.NodeId, req.Op.String(), req.User.Id, req.User.Name)
+	} else if req.Topic != nil {
+		fmt.Printf("[%s-%d] Received forwarded %s operation for topic %d (%s)\n", s.role, s.NodeId, req.Op.String(), req.Topic.Id, req.Topic.Name)
+	}
 
 	// Najprej updatamo lokalno shrambo
 	err := s.applyUpdate(req)
@@ -514,11 +533,24 @@ func (s *Server) ForwardUpdate(ctx context.Context, req *dataPlane.UpdateRequest
 					Success:        false,
 				}, nil
 			}
-			fmt.Printf("[%s-%d] Forwarded %s operation for message %d to next node (ack received)\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+			// Log based on operation type
+			if req.Message != nil {
+				fmt.Printf("[%s-%d] Forwarded %s operation for message %d to next node (ack received)\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+			} else if req.User != nil {
+				fmt.Printf("[%s-%d] Forwarded %s operation for user %d to next node (ack received)\n", s.role, s.NodeId, req.Op.String(), req.User.Id)
+			} else if req.Topic != nil {
+				fmt.Printf("[%s-%d] Forwarded %s operation for topic %d to next node (ack received)\n", s.role, s.NodeId, req.Op.String(), req.Topic.Id)
+			}
 		}
 	} else {
 		// Tail je konec -> izpiše info na terminal in vrne ack
-		fmt.Printf("[%s-%d] Applied %s operation for message %d (tail - no forward)\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+		if req.Message != nil {
+			fmt.Printf("[%s-%d] Applied %s operation for message %d (tail - no forward)\n", s.role, s.NodeId, req.Op.String(), req.Message.Id)
+		} else if req.User != nil {
+			fmt.Printf("[%s-%d] Applied %s operation for user %d (tail - no forward)\n", s.role, s.NodeId, req.Op.String(), req.User.Id)
+		} else if req.Topic != nil {
+			fmt.Printf("[%s-%d] Applied %s operation for topic %d (tail - no forward)\n", s.role, s.NodeId, req.Op.String(), req.Topic.Id)
+		}
 	}
 
 	return &dataPlane.AcknowledgeResponse{
@@ -529,22 +561,89 @@ func (s *Server) ForwardUpdate(ctx context.Context, req *dataPlane.UpdateRequest
 }
 
 // applyUpdate posodobi lokalno shrambo
-// TODO: dejansko klicati storage da shrani update -> trenutno smao print
 func (s *Server) applyUpdate(req *dataPlane.UpdateRequest) error {
 	msg := req.Message
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	switch req.Op {
+	case razpravljalnica.OpType_OP_CREATE_USER:
+		if req.User == nil {
+			return fmt.Errorf("OP_CREATE_USER requires User field")
+		}
+		fmt.Printf("[%s-%d] Applying CREATE_USER for user %d (%s)\n", s.role, s.NodeId, req.User.Id, req.User.Name)
+		// Ustvarimo uporabnika v lokalni shrambi z dodeljenim ID (za replikacijo)
+		_, err := s.messageBoardServer.store.CreateUser(req.User.Name, req.User.Id)
+		if err != nil {
+			return fmt.Errorf("failed to create user: %v", err)
+		}
+		return nil
+
+	case razpravljalnica.OpType_OP_CREATE_TOPIC:
+		if req.Topic == nil {
+			return fmt.Errorf("OP_CREATE_TOPIC requires Topic field")
+		}
+		fmt.Printf("[%s-%d] Applying CREATE_TOPIC for topic %d (%s)\n", s.role, s.NodeId, req.Topic.Id, req.Topic.Name)
+		// Ustvarimo temo v lokalni shrambi z dodeljenim ID (za replikacijo)
+		_, err := s.messageBoardServer.store.CreateTopic(req.Topic.Name, req.Topic.Id)
+		if err != nil {
+			return fmt.Errorf("failed to create topic: %v", err)
+		}
+		return nil
+
 	case razpravljalnica.OpType_OP_POST:
 		fmt.Printf("[%s-%d] Applying POST for message %d\n", s.role, s.NodeId, msg.Id)
+		// Zapišemo spremembo v shrambo
+		_, err := s.messageBoardServer.PostMessage(ctx, &razpravljalnica.PostMessageRequest{
+			TopicId: msg.TopicId,
+			UserId:  msg.UserId,
+			Text:    msg.Text,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to post message: %v", err)
+		}
 		return nil
+
 	case razpravljalnica.OpType_OP_UPDATE:
 		fmt.Printf("[%s-%d] Applying UPDATE for message %d\n", s.role, s.NodeId, msg.Id)
+		// Zapišemo spremembo v shrambo
+		_, err := s.messageBoardServer.UpdateMessage(ctx, &razpravljalnica.UpdateMessageRequest{
+			TopicId:   msg.TopicId,
+			UserId:    msg.UserId,
+			MessageId: msg.Id,
+			Text:      msg.Text,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to update message: %v", err)
+		}
 		return nil
+
 	case razpravljalnica.OpType_OP_DELETE:
 		fmt.Printf("[%s-%d] Applying DELETE for message %d\n", s.role, s.NodeId, msg.Id)
+		// Zapišemo spremembo v shrambo
+		_, err := s.messageBoardServer.DeleteMessage(ctx, &razpravljalnica.DeleteMessageRequest{
+			TopicId:   msg.TopicId,
+			UserId:    msg.UserId,
+			MessageId: msg.Id,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete message: %v", err)
+		}
 		return nil
+
 	case razpravljalnica.OpType_OP_LIKE:
 		fmt.Printf("[%s-%d] Applying LIKE for message %d\n", s.role, s.NodeId, msg.Id)
+		// Zapišemo spremembo v shrambo
+		_, err := s.messageBoardServer.LikeMessage(ctx, &razpravljalnica.LikeMessageRequest{
+			TopicId:   msg.TopicId,
+			MessageId: msg.Id,
+			UserId:    msg.UserId,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to like message: %v", err)
+		}
 		return nil
+
 	default:
 		return fmt.Errorf("unknown operation type: %v", req.Op)
 	}
@@ -553,6 +652,43 @@ func (s *Server) applyUpdate(req *dataPlane.UpdateRequest) error {
 // Storage functions that are overridden by streznik
 // Te funkcije kliče samo head volišče, ki potem posreduje update naprej
 // Client zahteva post na head, head updatira lokalno shrambo in potem posreduje naprej
+
+func (s *Server) CreateUser(ctx context.Context, req *razpravljalnica.CreateUserRequest) (*razpravljalnica.User, error) {
+	// Updatamo lokalno shrambo
+	user, err := s.messageBoardServer.CreateUser(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Head posreduje update naprej
+	if s.role == "head" {
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_CREATE_USER, nil, user, nil)
+		if err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward create user update: %v", err))
+		}
+	}
+
+	return user, nil
+}
+
+func (s *Server) CreateTopic(ctx context.Context, req *razpravljalnica.CreateTopicRequest) (*razpravljalnica.Topic, error) {
+	// Updatamo lokalno shrambo
+	topic, err := s.messageBoardServer.CreateTopic(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Head posreduje update naprej
+	if s.role == "head" {
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_CREATE_TOPIC, nil, nil, topic)
+		if err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward create topic update: %v", err))
+		}
+	}
+
+	return topic, nil
+}
+
 func (s *Server) PostMessage(ctx context.Context, req *razpravljalnica.PostMessageRequest) (*razpravljalnica.Message, error) {
 	// Updatamo lokalno shrambo
 	msg, err := s.messageBoardServer.PostMessage(ctx, req)
@@ -562,7 +698,7 @@ func (s *Server) PostMessage(ctx context.Context, req *razpravljalnica.PostMessa
 
 	// Head posreduje update naprej
 	if s.role == "head" {
-		err = s.forwardUpdate(razpravljalnica.OpType_OP_POST, msg)
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_POST, msg, nil, nil)
 		if err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward post update: %v", err))
 		}
@@ -580,7 +716,7 @@ func (s *Server) UpdateMessage(ctx context.Context, req *razpravljalnica.UpdateM
 
 	// Head posreduje update naprej
 	if s.role == "head" {
-		err = s.forwardUpdate(razpravljalnica.OpType_OP_UPDATE, msg)
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_UPDATE, msg, nil, nil)
 		if err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward update update: %v", err))
 		}
@@ -604,7 +740,7 @@ func (s *Server) DeleteMessage(ctx context.Context, req *razpravljalnica.DeleteM
 			TopicId: req.TopicId,
 			UserId:  req.UserId,
 		}
-		err = s.forwardUpdate(razpravljalnica.OpType_OP_DELETE, msg)
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_DELETE, msg, nil, nil)
 		if err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward delete update: %v", err))
 		}
@@ -622,7 +758,7 @@ func (s *Server) LikeMessage(ctx context.Context, req *razpravljalnica.LikeMessa
 
 	// Head posreduje update naprej
 	if s.role == "head" {
-		err = s.forwardUpdate(razpravljalnica.OpType_OP_LIKE, msg)
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_LIKE, msg, nil, nil)
 		if err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward like update: %v", err))
 		}

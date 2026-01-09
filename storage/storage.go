@@ -101,16 +101,36 @@ func NewDiscussionBoardStorage() *DiscussionBoardStorage {
 }
 
 // CreateUser ustvari novega uporabnika in mu dodeli ID
-func (s *DiscussionBoardStorage) CreateUser(name string) (*User, error) {
+// Če je userID > 0, se uporabi ta ID (za replikacijo), sicer se avtomatsko dodeli nov ID
+func (s *DiscussionBoardStorage) CreateUser(name string, userID ...int64) (*User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var id int64
+	if len(userID) > 0 && userID[0] > 0 {
+		// Uporabimo dodeljen ID (za replikacijo)
+		id = userID[0]
+		// Preverimo, če uporabnik že obstaja (idempotentnost)
+		if existing, exists := s.users[id]; exists {
+			// Če že obstaja, samo posodobimo ime (za konsistentnost)
+			existing.Name = name
+			return existing, nil
+		}
+		// Posodobimo nextUserID če je potrebno
+		if id >= s.nextUserID {
+			s.nextUserID = id + 1
+		}
+	} else {
+		// Avtomatsko dodelimo nov ID
+		id = s.nextUserID
+		s.nextUserID++
+	}
+
 	user := &User{
-		ID:   s.nextUserID,
+		ID:   id,
 		Name: name,
 	}
 	s.users[user.ID] = user
-	s.nextUserID++
 	return user, nil
 }
 
@@ -127,17 +147,37 @@ func (s *DiscussionBoardStorage) GetUser(userID int64) (*User, error) {
 }
 
 // CreateTopic ustvari novo temo
-func (s *DiscussionBoardStorage) CreateTopic(name string) (*Topic, error) {
+// Če je topicID > 0, se uporabi ta ID (za replikacijo), sicer se avtomatsko dodeli nov ID
+func (s *DiscussionBoardStorage) CreateTopic(name string, topicID ...int64) (*Topic, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var id int64
+	if len(topicID) > 0 && topicID[0] > 0 {
+		// Uporabimo dodeljen ID (za replikacijo)
+		id = topicID[0]
+		// Preverimo, če tema že obstaja (idempotentnost)
+		if existing, exists := s.topics[id]; exists {
+			// Če že obstaja, samo posodobimo ime (za konsistentnost)
+			existing.Name = name
+			return existing, nil
+		}
+		// Posodobimo nextTopicID če je potrebno
+		if id >= s.nextTopicID {
+			s.nextTopicID = id + 1
+		}
+	} else {
+		// Avtomatsko dodelimo nov ID
+		id = s.nextTopicID
+		s.nextTopicID++
+	}
+
 	topic := &Topic{
-		ID:   s.nextTopicID,
+		ID:   id,
 		Name: name,
 	}
 	s.topics[topic.ID] = topic
 	s.messagesByTopic[topic.ID] = make([]int64, 0)
-	s.nextTopicID++
 	return topic, nil
 }
 

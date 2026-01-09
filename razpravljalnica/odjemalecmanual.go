@@ -47,7 +47,14 @@ func ClientManual(controlURL string) {
 	}
 	defer subConn.Close()
 
+	tailConn, err := grpc.NewClient(initialState.Tail.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	defer tailConn.Close()
+
 	headClient := razpravljalnica.NewMessageBoardClient(headConn)
+	tailClient := razpravljalnica.NewMessageBoardClient(tailConn)
 	subClient := razpravljalnica.NewMessageBoardClient(subConn)
 
 	// Nov bufio Reader instance
@@ -98,7 +105,7 @@ func ClientManual(controlURL string) {
 				fmt.Println("Usage: getmessages <topicID>")
 				break
 			}
-			getMessages(headClient, parts[1])
+			getMessages(tailClient, parts[1])
 		case "like":
 			if len(parts) < 3 {
 				fmt.Println("Usage: like <topicID> <messageID>")
@@ -147,7 +154,7 @@ func showHelp() {
 	fmt.Println("  update <topicID> <messageID> <text> - Update a message")
 	fmt.Println("  delete <topicID> <messageID>        - Delete a message")
 	fmt.Println("  sub <topicID>                       - Subscribe to a topic (real-time events)")
-	fmt.Println("  clusterstate                        - Show cluster state (head/tail)")
+	fmt.Println("  clusterstate                        - Show cluster state (head/tail/sub nodes)")
 	fmt.Println("  exit, quit                          - Exit the client")
 	fmt.Println()
 }

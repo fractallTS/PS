@@ -10,6 +10,8 @@ message UpdateRequest {
     int64 sequence_number = 1;
     razpravljalnica.OpType op = 2;
     razpravljalnica.Message message = 3;
+    razpravljalnica.User user = 4; // For OP_CREATE_USER operations
+    razpravljalnica.Topic topic = 5; // For OP_CREATE_TOPIC operations
 }
 
 message AcknowledgeResponse {
