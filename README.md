@@ -10,18 +10,25 @@ Storitev (strežnik) napišite v programskem jeziku Go. Uporablja naj ogrodje **
 
 Progress:
 Osnova je narejena, manjka:
- - interface za odjemalca(CLI) -> naceloma narejen (zazene se isto kot odjemalec sam se flag -clientMode manual)
- - pravilna control plane implementacija
- - verižna replikacija (interNode komunikacija, )
+ - storage -> trenutno applyUpdate() samo izpiše na terminal
  - token avtentikacija pri subscribe
  - userji z istim imenom (trenutno ustvari nov userID), mogoče še možnost prijave z geslom
  - graceful exit za subscribe na odjemalcu
  - 2x like naj odstrani like
- - node vpraša control plane za naslednji node pri replikaciji
  - ...
 
+
 How to Use
-Start the server:
-cd razpravljalnica && go run . -mode server -address :50051
-Run the client:
-go run . -mode client -clientMode test -address localhost:50051
+1. Start the control server:
+cd razpravljalnica && go run . -mode server -role control -clientControlPort :50000 -serverControlPort :50001
+2. Start tail server:
+cd razpravljalnica && go run . -mode server -role tail -clientPort 50008 -dataPort 50009 -serverControlPort :50001
+3. Start head server:
+cd razpravljalnica && go run . -mode server -role head -clientPort 50002 -dataPort 50004 -serverControlPort :50001
+4. Start chain servers: (for more use different ports)
+cd razpravljalnica go run . -mode server -role chain -clientPort 50050 -dataPort 50052
+
+5. Start client:
+go run . -mode client -clientMode manual -clientControlPort :50001
+
+
