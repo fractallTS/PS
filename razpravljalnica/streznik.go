@@ -116,9 +116,7 @@ func (s *messageBoardServer) LikeMessage(ctx context.Context, req *razpravljalni
 		if err == storage.ErrorMessageNotFound || err == storage.ErrorTopicNotFound || err == storage.ErrorUserNotFound {
 			return nil, status.Error(codes.NotFound, err.Error())
 		}
-		if err == storage.ErrorAlreadyLiked {
-			return nil, status.Error(codes.AlreadyExists, err.Error())
-		}
+
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 

@@ -129,7 +129,8 @@ func ClientManual(controlURL string) {
 				fmt.Println("Usage: sub <topicID>")
 				break
 			}
-			subToTopic(subClient, user, parts[1], initialState.Sub.NodeId, initialState.Sub.Address)
+			subToTopic(subClient, user, parts[1], initialState.Sub.NodeId, initialState.Sub.Address, reader)
+			fmt.Println("Unsubscribed from topic")
 		case "clusterstate":
 			clusterState(controlPlaneClient)
 		case "exit", "quit":
@@ -327,14 +328,14 @@ func deleteMessage(client razpravljalnica.MessageBoardClient, user *razpravljaln
 }
 
 // Naročnina na dogodke iz teme; povežemo se direktno na sub node iz control plane
-func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr string, subNodeID int64, subNodeAddress string) {
+func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr string, subNodeID int64, subNodeAddress string, reader *bufio.Reader) {
 	topicID := parseInt64(topicIDStr)
 	if topicID == -1 {
 		return
 	}
 
 	fmt.Printf("Subscribing to topic ID=%d via %d at %s...\n", topicID, subNodeID, subNodeAddress)
-	fmt.Println("Waiting for events (press Ctrl+C to stop)...")
+	fmt.Println("Waiting for events (press Enter to stop)...")
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -349,27 +350,72 @@ func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica
 		return
 	}
 
-	for {
-		event, err := stream.Recv()
+	exitChan := make(chan bool, 1)
+
+	// Gorutina bere vhod uporabnika
+	go func() {
+
+		_, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Printf("Stream closed or error: %v\n", err)
+
+			exitChan <- true
 			return
 		}
+		// Vsak input sproži izhod
+		exitChan <- true
+	}()
 
-		opTypeStr := "UNKNOWN"
-		switch event.Op {
-		case razpravljalnica.OpType_OP_POST:
-			opTypeStr = "POST"
-		case razpravljalnica.OpType_OP_UPDATE:
-			opTypeStr = "UPDATE"
-		case razpravljalnica.OpType_OP_DELETE:
-			opTypeStr = "DELETE"
-		case razpravljalnica.OpType_OP_LIKE:
-			opTypeStr = "LIKE"
+	// Kanali za dogodke
+	eventChan := make(chan *razpravljalnica.MessageEvent, 1)
+	errChan := make(chan error, 1)
+
+	// Go rutina sprejema dogodke
+	go func() {
+		for {
+			event, err := stream.Recv()
+			if err != nil {
+				errChan <- err
+				return
+			}
+			select {
+			case eventChan <- event:
+			case <-subCtx.Done():
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-exitChan:
+			// uporabnik je pritisnil enter
+			cancel()
+
+		case <-subCtx.Done():
+			return
+		case event := <-eventChan:
+			opTypeStr := "UNKNOWN"
+			switch event.Op {
+			case razpravljalnica.OpType_OP_POST:
+				opTypeStr = "POST"
+			case razpravljalnica.OpType_OP_UPDATE:
+				opTypeStr = "UPDATE"
+			case razpravljalnica.OpType_OP_DELETE:
+				opTypeStr = "DELETE"
+			case razpravljalnica.OpType_OP_LIKE:
+				opTypeStr = "LIKE"
+			}
+
+			fmt.Printf("[Event #%d] %s - Message ID=%d, UserID=%d, Likes=%d, Text='%s'\n",
+				event.SequenceNumber, opTypeStr, event.Message.Id, event.Message.UserId, event.Message.Likes, event.Message.Text)
+
+		case err := <-errChan:
+			if err != nil {
+				fmt.Printf("Stream closed or error: %v\n", err)
+				return
+			}
 		}
 
-		fmt.Printf("[Event #%d] %s - Message ID=%d, UserID=%d, Likes=%d, Text='%s'\n",
-			event.SequenceNumber, opTypeStr, event.Message.Id, event.Message.UserId, event.Message.Likes, event.Message.Text)
 	}
 }
 

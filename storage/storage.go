@@ -400,20 +400,22 @@ func (s *DiscussionBoardStorage) LikeMessage(topicID, messageID, userID int64) (
 		return nil, ErrorUserNotFound
 	}
 
-	// Preverimo, da uporabnik še ni všečkal tega sporočila
+	// Če je uporabnik že všečkal sporočilo, všeček odstranimo
 	likeKey := likeKey(topicID, messageID, userID)
 	if _, ok := s.likes[likeKey]; ok {
-		return nil, ErrorAlreadyLiked
-	}
+		delete(s.likes, likeKey)
+		message.Likes--
+	} else {
 
-	// Dodamo všeček
-	like := &Like{
-		TopicID:   topicID,
-		MessageID: messageID,
-		UserID:    userID,
+		// Dodamo všeček
+		like := &Like{
+			TopicID:   topicID,
+			MessageID: messageID,
+			UserID:    userID,
+		}
+		s.likes[likeKey] = like
+		message.Likes++
 	}
-	s.likes[likeKey] = like
-	message.Likes++
 
 	// Pošljemo dogodek naročnikom
 	s.broadcastEvent(MessageEvent{

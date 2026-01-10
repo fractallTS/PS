@@ -13,9 +13,9 @@ Osnova je narejena, manjka:
  - token avtentikacija pri subscribe
  - userji z istim imenom (trenutno ustvari nov userID), mogoče še možnost prijave z geslom
  - graceful exit za subscribe na odjemalcu (scan za input, mogoče q ali any key)
- - 2x like naj odstrani like
  - getClusterState na odjemalcu naj dejansko posodobi naslove za head, tail in sub
  - dodeljen sub node se ne spreminja
+ - namesto nodeId izpis nečesa drugega
  - ...
 
 
