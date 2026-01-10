@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 	"time"
 
@@ -302,7 +301,7 @@ type NodeRegistration struct {
 }
 
 // NewControlPlaneServer ustvari nov strežnik za ControlPlane
-func NewControlPlaneServer(headAddress, tailAddress string) *controlPlaneServer {
+func NewControlPlaneServer() *controlPlaneServer {
 	return &controlPlaneServer{
 		nodes: make(map[int64]*NodeRegistration),
 	}
@@ -880,27 +879,42 @@ func ChainServer(clientPort, controlPort, dataPort, serverControlPort string) {
 
 func ControlServer(clientControlPort, serverControlPort string) {
 	// Pripravimo strežnik gRPC
-	grpcServer := grpc.NewServer()
+	clientGrpc := grpc.NewServer()
+	serverGrpc := grpc.NewServer()
 	// Pripravimo strežnika za ControlPlane
-	controlPlaneSrv := NewControlPlaneServer(clientControlPort, clientControlPort) // Za enostavno implementacijo sta head in tail enaka
+	controlPlaneSrv := NewControlPlaneServer()
 
 	// Registriramo storitve
-	controlPlane.RegisterControlPlaneServer(grpcServer, controlPlaneSrv)
+	controlPlane.RegisterControlPlaneServer(clientGrpc, controlPlaneSrv)
+	controlPlane.RegisterControlPlaneServer(serverGrpc, controlPlaneSrv)
 
-	// Odpremo vtičnico
-	listener, err := net.Listen("tcp", serverControlPort)
-	if err != nil {
-		panic(fmt.Sprintf("failed to listen: %v", err))
-	}
+	// Odpremo vtičnice
+	go func() {
+		listener, err := net.Listen("tcp", clientControlPort)
+		if err != nil {
+			panic(fmt.Sprintf("failed to listen on client port: %v", err))
+		}
+		fmt.Printf("Client control gRPC server listening at clientPort%s\n", clientControlPort)
+		if err := clientGrpc.Serve(listener); err != nil {
+			panic(fmt.Sprintf("failed to serve client gRPC: %v", err))
+		}
+	}()
 
-	hostname, _ := os.Hostname()
-	fmt.Printf("Control gRPC server listening at %s %s\n", hostname, serverControlPort)
+	// Za strežnike
+	go func() {
+		listener, err := net.Listen("tcp", serverControlPort)
+		if err != nil {
+			panic(fmt.Sprintf("failed to listen on client port: %v", err))
+		}
+		fmt.Printf("Server control gRPC server listening at serverPort%s\n", serverControlPort)
+		if err := clientGrpc.Serve(listener); err != nil {
+			panic(fmt.Sprintf("failed to serve client gRPC: %v", err))
+		}
+	}()
 
-	// Začnemo s streženjem
-	if err := grpcServer.Serve(listener); err != nil {
-		panic(fmt.Sprintf("failed to serve: %v", err))
-	}
-
+	fmt.Println("Server startup successfull")
+	// Blokirmo glavno nit da se ne konča
+	select {}
 }
 
 // StartServer zažene strežnik z določeno vlogo in naslovi
@@ -924,7 +938,7 @@ func StartServer(role, clientPort, dataPort, controlPlaneAddress string) {
 	}
 
 	// Odkrijemo naslednje vozlišče v verigi
-	time.Sleep(2 * time.Second) // Počakamo malo, da se ostali nodi tudi registrirajo
+	time.Sleep(5 * time.Second) // Počakamo malo, da se ostali nodi tudi registrirajo
 	err = server.discoverNextNode()
 	if err != nil {
 		panic(fmt.Sprintf("failed to discover next node: %v", err))

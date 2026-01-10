@@ -33,7 +33,7 @@ func ClientManual(controlURL string) {
 		panic(err)
 	}
 
-	fmt.Printf("Cluster state: head=%d at %s, sub=%d at %s\n", initialState.Head.NodeId, initialState.Head.Address, initialState.Sub.NodeId, initialState.Sub.Address)
+	fmt.Printf("Cluster state: head=%d at %s, tail=%d at %s, sub=%d at %s\n", initialState.Head.NodeId, initialState.Head.Address, initialState.Tail.NodeId, initialState.Tail.Address, initialState.Sub.NodeId, initialState.Sub.Address)
 
 	headConn, err := grpc.NewClient(initialState.Head.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

@@ -10,16 +10,20 @@ Storitev (strežnik) napišite v programskem jeziku Go. Uporablja naj ogrodje **
 
 Progress:
 Osnova je narejena, manjka:
- - storage -> trenutno applyUpdate() samo izpiše na terminal
  - token avtentikacija pri subscribe
  - userji z istim imenom (trenutno ustvari nov userID), mogoče še možnost prijave z geslom
- - graceful exit za subscribe na odjemalcu
+ - graceful exit za subscribe na odjemalcu (scan za input, mogoče q ali any key)
  - 2x like naj odstrani like
- - test odjemalec je treba popravit
+ - getClusterState na odjemalcu naj dejansko posodobi naslove za head, tail in sub
+ - dodeljen sub node se ne spreminja
  - ...
 
 
 How to Use
+run startup.bat
+
+OR manually
+
 1. Start the control server:
 cd razpravljalnica && go run . -mode server -role control -clientControlPort :50000 -serverControlPort :50001
 2. Start tail server:
