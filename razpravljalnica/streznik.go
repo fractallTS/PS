@@ -756,6 +756,7 @@ func (s *Server) LikeMessage(ctx context.Context, req *razpravljalnica.LikeMessa
 
 	// Head posreduje update naprej
 	if s.role == "head" {
+		// Pri LIKE posredujemo ID uporabnika, ki je všečkal
 		replicaMsg := &razpravljalnica.Message{
 			Id:        msg.Id,
 			TopicId:   msg.TopicId,
