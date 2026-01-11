@@ -315,6 +315,7 @@ func (s *controlPlaneServer) GetClusterState(ctx context.Context, req *emptypb.E
 	}
 	// Izberemo sub vozlišče na podlagi števila naročnin (round-robin)
 	subIndex := s.subscriptionCounter % numNodes
+	s.subscriptionCounter++
 	// Najdemo head, tail in sub vozlišče
 	var head, tail, sub *NodeRegistration
 	for _, node := range s.nodes {
