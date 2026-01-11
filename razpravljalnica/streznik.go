@@ -756,7 +756,16 @@ func (s *Server) LikeMessage(ctx context.Context, req *razpravljalnica.LikeMessa
 
 	// Head posreduje update naprej
 	if s.role == "head" {
-		err = s.forwardUpdate(razpravljalnica.OpType_OP_LIKE, msg, nil, nil)
+		// Pri LIKE posredujemo ID uporabnika, ki je všečkal
+		replicaMsg := &razpravljalnica.Message{
+			Id:        msg.Id,
+			TopicId:   msg.TopicId,
+			UserId:    req.UserId,
+			Text:      msg.Text,
+			CreatedAt: msg.CreatedAt,
+			Likes:     msg.Likes,
+		}
+		err = s.forwardUpdate(razpravljalnica.OpType_OP_LIKE, replicaMsg, nil, nil)
 		if err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to forward like update: %v", err))
 		}

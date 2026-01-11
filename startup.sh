@@ -7,7 +7,7 @@ open_terminal() {
 }
 
 open_terminal "Control Server" "go run . -mode server -role control -clientControlPort :50000 -serverControlPort :50001"
-sleep 8
+sleep 4
 open_terminal "Tail Server" "go run . -mode server -role tail -clientPort 50008 -dataPort 50009 -serverControlPort :50001"
 open_terminal "Head Server" "go run . -mode server -role head -clientPort 50002 -dataPort 50004 -serverControlPort :50001"
 open_terminal "Chain Server 1" "go run . -mode server -role chain -clientPort 50050 -dataPort 50052"
