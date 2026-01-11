@@ -129,8 +129,20 @@ func ClientManual(controlURL string) {
 				fmt.Println("Usage: sub <topicID>")
 				break
 			}
-			subToTopic(subClient, user, parts[1], initialState.Sub.NodeId, initialState.Sub.Address, reader)
-			fmt.Println("Unsubscribed from topic")
+			// Convert all topic IDs in parts[1:] to a slice of int64
+			var topicIDs []int64
+			for _, t := range parts[1:] {
+				id := parseInt64(t)
+				if id != -1 {
+					topicIDs = append(topicIDs, id)
+				}
+			}
+			if len(topicIDs) == 0 {
+				fmt.Println("No valid topic IDs provided.")
+				break
+			}
+			subToTopic(subClient, user, topicIDs, initialState.Sub.NodeId, initialState.Sub.Address, reader)
+			fmt.Println("Unsubscribed from all topics")
 		case "exit", "quit":
 			fmt.Println("Exiting...")
 			return
@@ -325,20 +337,19 @@ func deleteMessage(client razpravljalnica.MessageBoardClient, user *razpravljaln
 }
 
 // Naročnina na dogodke iz teme; povežemo se direktno na sub node iz control plane
-func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDStr string, subNodeID int64, subNodeAddress string, reader *bufio.Reader) {
-	topicID := parseInt64(topicIDStr)
-	if topicID == -1 {
-		return
+func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica.User, topicIDs []int64, subNodeID int64, subNodeAddress string, reader *bufio.Reader) {
+
+	for topicID := range topicIDs {
+		fmt.Printf("Subscribing to topic ID=%d via %d at %s...\n", topicID, subNodeID, subNodeAddress)
 	}
 
-	fmt.Printf("Subscribing to topic ID=%d via %d at %s...\n", topicID, subNodeID, subNodeAddress)
 	fmt.Println("Waiting for events (press Enter to stop)...")
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stream, err := client.SubscribeTopic(subCtx, &razpravljalnica.SubscribeTopicRequest{
-		TopicId:       []int64{topicID},
+		TopicId:       topicIDs,
 		UserId:        user.Id,
 		FromMessageId: 0,
 	})
@@ -403,8 +414,8 @@ func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica
 				opTypeStr = "LIKE"
 			}
 
-			fmt.Printf("[Event #%d] %s - Message ID=%d, UserID=%d, Likes=%d, Text='%s'\n",
-				event.SequenceNumber, opTypeStr, event.Message.Id, event.Message.UserId, event.Message.Likes, event.Message.Text)
+			fmt.Printf("[Event #%d] %s - Message Topic=%d ID=%d, UserID=%d, Likes=%d, Text='%s'\n",
+				event.SequenceNumber, opTypeStr, event.Message.TopicId, event.Message.Id, event.Message.UserId, event.Message.Likes, event.Message.Text)
 
 		case err := <-errChan:
 			if err != nil {

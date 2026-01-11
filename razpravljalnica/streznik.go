@@ -937,7 +937,7 @@ func StartServer(role, clientPort, dataPort, controlPlaneAddress string) {
 	}
 
 	// Odkrijemo naslednje vozlišče v verigi
-	time.Sleep(5 * time.Second) // Počakamo malo, da se ostali nodi tudi registrirajo
+	time.Sleep(3 * time.Second) // Počakamo malo, da se ostali nodi tudi registrirajo
 	err = server.discoverNextNode()
 	if err != nil {
 		panic(fmt.Sprintf("failed to discover next node: %v", err))
