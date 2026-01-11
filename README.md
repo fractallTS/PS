@@ -12,9 +12,6 @@ Progress:
 Osnova je narejena, manjka:
  - token avtentikacija pri subscribe
  - userji z istim imenom (trenutno ustvari nov userID), mogoče še možnost prijave z geslom
- - graceful exit za subscribe na odjemalcu (scan za input, mogoče q ali any key)
- - getClusterState na odjemalcu naj dejansko posodobi naslove za head, tail in sub
- - dodeljen sub node se ne spreminja
  - namesto nodeId izpis nečesa drugega
  - ...
 
@@ -34,6 +31,6 @@ cd razpravljalnica && go run . -mode server -role head -clientPort 50002 -dataPo
 cd razpravljalnica go run . -mode server -role chain -clientPort 50050 -dataPort 50052
 
 5. Start client:
-go run . -mode client -clientMode manual -clientControlPort :50001
+go run . -mode client -clientMode manual -clientControlPort :50000
 
 

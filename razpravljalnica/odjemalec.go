@@ -67,18 +67,6 @@ func Client(controlURL string) {
 	// Demonstracija delovanja Razpravljalnice
 	fmt.Println("\n=== Razpravljalnica Demo ===")
 
-	// 1. Preverimo stanje klastra
-	fmt.Println("1. Getting cluster state...")
-	clusterState, err := controlPlaneClient.GetClusterState(ctx, &emptypb.Empty{})
-	if err != nil {
-		fmt.Printf("Error getting cluster state: %v\n", err)
-	} else {
-		fmt.Printf("   Head: %d at %s\n", clusterState.Head.NodeId, clusterState.Head.Address)
-		fmt.Printf("   Tail: %d at %s\n", clusterState.Tail.NodeId, clusterState.Tail.Address)
-		fmt.Printf("   Sub: %d at %s\n", clusterState.Sub.NodeId, clusterState.Sub.Address)
-	}
-	fmt.Println()
-
 	// 2. Ustvarimo uporabnike
 	fmt.Println("2. Creating users...")
 	user1, err := headClient.CreateUser(ctx, &razpravljalnica.CreateUserRequest{Name: "Alice"})

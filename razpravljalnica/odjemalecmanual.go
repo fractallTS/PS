@@ -131,8 +131,6 @@ func ClientManual(controlURL string) {
 			}
 			subToTopic(subClient, user, parts[1], initialState.Sub.NodeId, initialState.Sub.Address, reader)
 			fmt.Println("Unsubscribed from topic")
-		case "clusterstate":
-			clusterState(controlPlaneClient)
 		case "exit", "quit":
 			fmt.Println("Exiting...")
 			return
@@ -155,7 +153,6 @@ func showHelp() {
 	fmt.Println("  update <topicID> <messageID> <text> - Update a message")
 	fmt.Println("  delete <topicID> <messageID>        - Delete a message")
 	fmt.Println("  sub <topicID>                       - Subscribe to a topic (real-time events)")
-	fmt.Println("  clusterstate                        - Show cluster state (head/tail/sub nodes)")
 	fmt.Println("  exit, quit                          - Exit the client")
 	fmt.Println()
 }
@@ -420,7 +417,7 @@ func subToTopic(client razpravljalnica.MessageBoardClient, user *razpravljalnica
 }
 
 // Pridobimo stanje clustra
-func clusterState(client controlPlane.ControlPlaneClient) {
+/*func clusterState(client controlPlane.ControlPlaneClient) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
@@ -434,7 +431,7 @@ func clusterState(client controlPlane.ControlPlaneClient) {
 	fmt.Printf("   Tail: %d at %s\n", state.Tail.NodeId, state.Tail.Address)
 	fmt.Printf("   Sub: %d at %s\n", state.Sub.NodeId, state.Sub.Address)
 	fmt.Println()
-}
+}*/
 
 // Pomožna funkcija za pretvorbo stringa v int64 z obravnavo napak
 func parseInt64(s string) int64 {
