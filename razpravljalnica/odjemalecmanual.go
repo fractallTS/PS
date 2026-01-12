@@ -62,11 +62,43 @@ func ClientManual(controlURL string) {
 
 	fmt.Println("\n=== Razpravljalnica Manual Client ===")
 
-	// Naredimo nov user z imenom prebranim iz CLI
-	fmt.Print("Enter username: ")
-	username, _ := reader.ReadString('\n')
-	username = strings.TrimSpace(username)
-	user := createUser(headClient, username)
+	fmt.Print("Type 1 to login or 2 to create a new user: ")
+	choice, _ := reader.ReadString('\n')
+	choice = strings.TrimSpace(choice)
+	var user *razpravljalnica.User
+
+	switch choice {
+	case "1":
+		// Prijava obstoječega uporabnika
+		fmt.Print("Enter userID and token: ")
+		userInput, _ := reader.ReadString('\n')
+		userInput = strings.TrimSpace(userInput)
+		parts := strings.SplitN(userInput, " ", 2)
+		if len(parts) < 2 {
+			fmt.Println("Invalid input. Expected format: <userID> <token>")
+			return
+		}
+		userID := parseInt64(parts[0])
+		token := parts[1]
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+		user, err := headClient.LoginUser(ctx, &razpravljalnica.LoginUserRequest{
+			UserId: userID,
+			Token:  token,
+		})
+		if err != nil {
+			fmt.Printf("Error logging in: %v\n", err)
+			return
+		}
+		fmt.Printf("Logged in as user: ID=%d, Name=%s\n\n", user.Id, user.Name)
+	case "2":
+		// Naredimo nov user z imenom prebranim iz CLI
+		fmt.Print("Enter username: ")
+		username, _ := reader.ReadString('\n')
+		username = strings.TrimSpace(username)
+		user = createUser(headClient, username)
+	}
 
 	fmt.Println("Type 'h' for help")
 
@@ -183,7 +215,7 @@ func createUser(client razpravljalnica.MessageBoardClient, name string) *razprav
 		fmt.Printf("Error creating user: %v\n", err)
 		return nil
 	}
-	fmt.Printf("Created user: ID=%d, Name=%s\n\n", user.Id, user.Name)
+	fmt.Printf("Created user: ID=%d, Name=%s, Token=%s\n\n", user.Id, user.Name, user.Token)
 	return user
 }
 

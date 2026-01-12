@@ -7,6 +7,8 @@
 package storage
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -15,8 +17,9 @@ import (
 
 // User predstavlja uporabnika razpravljalnice
 type User struct {
-	ID   int64
-	Name string
+	ID    int64
+	Name  string
+	Token string // avtentikacijski token
 }
 
 // Topic predstavlja temo razprave
@@ -100,6 +103,15 @@ func NewDiscussionBoardStorage() *DiscussionBoardStorage {
 	}
 }
 
+// generateToken generira naključen token za prijavo uporabnika
+func generateToken() (string, error) {
+	bytes := make([]byte, 4)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
 // CreateUser ustvari novega uporabnika in mu dodeli ID
 // Če je userID > 0, se uporabi ta ID (za replikacijo), sicer se avtomatsko dodeli nov ID
 func (s *DiscussionBoardStorage) CreateUser(name string, userID ...int64) (*User, error) {
@@ -126,9 +138,15 @@ func (s *DiscussionBoardStorage) CreateUser(name string, userID ...int64) (*User
 		s.nextUserID++
 	}
 
+	token, err := generateToken() // generira naključen token za prijavo uporabnika
+	if err != nil {
+		return nil, err
+	}
+
 	user := &User{
-		ID:   id,
-		Name: name,
+		ID:    id,
+		Name:  name,
+		Token: token,
 	}
 	s.users[user.ID] = user
 	return user, nil

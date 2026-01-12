@@ -6,8 +6,6 @@ package main
 import (
 	"api/storage"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"sync"
@@ -46,8 +44,9 @@ func (s *messageBoardServer) CreateUser(ctx context.Context, req *razpravljalnic
 	}
 
 	return &razpravljalnica.User{
-		Id:   user.ID,
-		Name: user.Name,
+		Id:    user.ID,
+		Name:  user.Name,
+		Token: user.Token,
 	}, nil
 }
 
@@ -270,15 +269,6 @@ func storageEventToProto(event *storage.MessageEvent) *razpravljalnica.MessageEv
 		Message:        storageMessageToProto(&event.Message),
 		EventAt:        timestamppb.New(event.EventAt),
 	}
-}
-
-// generateToken generira naključen token za naročnino
-func generateToken() (string, error) {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
 }
 
 // controlPlaneServer implementira ControlPlane service
@@ -650,6 +640,27 @@ func (s *Server) applyUpdate(req *dataPlane.UpdateRequest) error {
 // Storage functions that are overridden by streznik
 // Te funkcije kliče samo head volišče, ki potem posreduje update naprej
 // Client zahteva post na head, head updatira lokalno shrambo in potem posreduje naprej
+
+func (s *Server) LoginUser(ctx context.Context, req *razpravljalnica.LoginUserRequest) (*razpravljalnica.User, error) {
+	// Preverimo če uporabnik obstaja
+
+	user, err := s.store.GetUser(req.UserId)
+	if err != nil {
+		if err == storage.ErrorUserNotFound {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if user.Token != req.Token {
+		return nil, status.Error(codes.PermissionDenied, "invalid token")
+	}
+	return &razpravljalnica.User{
+		Id:    user.ID,
+		Name:  user.Name,
+		Token: user.Token,
+	}, nil
+
+}
 
 func (s *Server) CreateUser(ctx context.Context, req *razpravljalnica.CreateUserRequest) (*razpravljalnica.User, error) {
 	// Updatamo lokalno shrambo

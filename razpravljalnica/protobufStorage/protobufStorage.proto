@@ -13,6 +13,7 @@ import "protobufControlPlane/controlPlane.proto";
 message User {
   int64 id = 1;
   string name = 2;
+  string token = 3;
 }
 
 message Topic {
@@ -55,6 +56,9 @@ service  MessageBoard{
   // Creates a new user and assigns it an id
   rpc CreateUser(CreateUserRequest) returns (User);
 
+  // Logs in an already created user with a token
+  rpc LoginUser(LoginUserRequest) returns (User);
+
   // Creates a new topic to which users can post messages
   rpc CreateTopic(CreateTopicRequest) returns (Topic);
 
@@ -91,6 +95,11 @@ service  MessageBoard{
 
 message CreateUserRequest {
   string name = 1;
+}
+
+message LoginUserRequest {
+  int64 user_id = 1;
+  string token = 2;
 }
 
 message CreateTopicRequest {
