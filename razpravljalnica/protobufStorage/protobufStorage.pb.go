@@ -89,6 +89,7 @@ type User struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Token         string                 `protobuf:"bytes,3,opt,name=token,proto3" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -133,6 +134,13 @@ func (x *User) GetId() int64 {
 func (x *User) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *User) GetToken() string {
+	if x != nil {
+		return x.Token
 	}
 	return ""
 }
@@ -377,6 +385,58 @@ func (x *CreateUserRequest) GetName() string {
 	return ""
 }
 
+type LoginUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoginUserRequest) Reset() {
+	*x = LoginUserRequest{}
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoginUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoginUserRequest) ProtoMessage() {}
+
+func (x *LoginUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoginUserRequest.ProtoReflect.Descriptor instead.
+func (*LoginUserRequest) Descriptor() ([]byte, []int) {
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *LoginUserRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *LoginUserRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
 type CreateTopicRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -386,7 +446,7 @@ type CreateTopicRequest struct {
 
 func (x *CreateTopicRequest) Reset() {
 	*x = CreateTopicRequest{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[5]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -398,7 +458,7 @@ func (x *CreateTopicRequest) String() string {
 func (*CreateTopicRequest) ProtoMessage() {}
 
 func (x *CreateTopicRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[5]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -411,7 +471,7 @@ func (x *CreateTopicRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTopicRequest.ProtoReflect.Descriptor instead.
 func (*CreateTopicRequest) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{5}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateTopicRequest) GetName() string {
@@ -432,7 +492,7 @@ type PostMessageRequest struct {
 
 func (x *PostMessageRequest) Reset() {
 	*x = PostMessageRequest{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[6]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -444,7 +504,7 @@ func (x *PostMessageRequest) String() string {
 func (*PostMessageRequest) ProtoMessage() {}
 
 func (x *PostMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[6]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -457,7 +517,7 @@ func (x *PostMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostMessageRequest.ProtoReflect.Descriptor instead.
 func (*PostMessageRequest) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{6}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PostMessageRequest) GetTopicId() int64 {
@@ -492,7 +552,7 @@ type DeleteMessageRequest struct {
 
 func (x *DeleteMessageRequest) Reset() {
 	*x = DeleteMessageRequest{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[7]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -504,7 +564,7 @@ func (x *DeleteMessageRequest) String() string {
 func (*DeleteMessageRequest) ProtoMessage() {}
 
 func (x *DeleteMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[7]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -517,7 +577,7 @@ func (x *DeleteMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMessageRequest.ProtoReflect.Descriptor instead.
 func (*DeleteMessageRequest) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{7}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DeleteMessageRequest) GetTopicId() int64 {
@@ -553,7 +613,7 @@ type UpdateMessageRequest struct {
 
 func (x *UpdateMessageRequest) Reset() {
 	*x = UpdateMessageRequest{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[8]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -565,7 +625,7 @@ func (x *UpdateMessageRequest) String() string {
 func (*UpdateMessageRequest) ProtoMessage() {}
 
 func (x *UpdateMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[8]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -578,7 +638,7 @@ func (x *UpdateMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMessageRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMessageRequest) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{8}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *UpdateMessageRequest) GetTopicId() int64 {
@@ -620,7 +680,7 @@ type LikeMessageRequest struct {
 
 func (x *LikeMessageRequest) Reset() {
 	*x = LikeMessageRequest{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[9]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -632,7 +692,7 @@ func (x *LikeMessageRequest) String() string {
 func (*LikeMessageRequest) ProtoMessage() {}
 
 func (x *LikeMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[9]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -645,7 +705,7 @@ func (x *LikeMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LikeMessageRequest.ProtoReflect.Descriptor instead.
 func (*LikeMessageRequest) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{9}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *LikeMessageRequest) GetTopicId() int64 {
@@ -678,7 +738,7 @@ type ListTopicsResponse struct {
 
 func (x *ListTopicsResponse) Reset() {
 	*x = ListTopicsResponse{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[10]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -690,7 +750,7 @@ func (x *ListTopicsResponse) String() string {
 func (*ListTopicsResponse) ProtoMessage() {}
 
 func (x *ListTopicsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[10]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -703,7 +763,7 @@ func (x *ListTopicsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTopicsResponse.ProtoReflect.Descriptor instead.
 func (*ListTopicsResponse) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{10}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListTopicsResponse) GetTopics() []*Topic {
@@ -724,7 +784,7 @@ type GetMessagesRequest struct {
 
 func (x *GetMessagesRequest) Reset() {
 	*x = GetMessagesRequest{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[11]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +796,7 @@ func (x *GetMessagesRequest) String() string {
 func (*GetMessagesRequest) ProtoMessage() {}
 
 func (x *GetMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[11]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +809,7 @@ func (x *GetMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMessagesRequest.ProtoReflect.Descriptor instead.
 func (*GetMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{11}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetMessagesRequest) GetTopicId() int64 {
@@ -782,7 +842,7 @@ type GetMessagesResponse struct {
 
 func (x *GetMessagesResponse) Reset() {
 	*x = GetMessagesResponse{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[12]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -794,7 +854,7 @@ func (x *GetMessagesResponse) String() string {
 func (*GetMessagesResponse) ProtoMessage() {}
 
 func (x *GetMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[12]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -807,7 +867,7 @@ func (x *GetMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMessagesResponse.ProtoReflect.Descriptor instead.
 func (*GetMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{12}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetMessagesResponse) GetMessages() []*Message {
@@ -829,7 +889,7 @@ type SubscribeTopicRequest struct {
 
 func (x *SubscribeTopicRequest) Reset() {
 	*x = SubscribeTopicRequest{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[13]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -841,7 +901,7 @@ func (x *SubscribeTopicRequest) String() string {
 func (*SubscribeTopicRequest) ProtoMessage() {}
 
 func (x *SubscribeTopicRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[13]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -854,7 +914,7 @@ func (x *SubscribeTopicRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeTopicRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeTopicRequest) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{13}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SubscribeTopicRequest) GetTopicId() []int64 {
@@ -895,7 +955,7 @@ type SubscriptionNodeRequest struct {
 
 func (x *SubscriptionNodeRequest) Reset() {
 	*x = SubscriptionNodeRequest{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[14]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -907,7 +967,7 @@ func (x *SubscriptionNodeRequest) String() string {
 func (*SubscriptionNodeRequest) ProtoMessage() {}
 
 func (x *SubscriptionNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[14]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -920,7 +980,7 @@ func (x *SubscriptionNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionNodeRequest.ProtoReflect.Descriptor instead.
 func (*SubscriptionNodeRequest) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{14}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SubscriptionNodeRequest) GetUserId() int64 {
@@ -947,7 +1007,7 @@ type SubscriptionNodeResponse struct {
 
 func (x *SubscriptionNodeResponse) Reset() {
 	*x = SubscriptionNodeResponse{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[15]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -959,7 +1019,7 @@ func (x *SubscriptionNodeResponse) String() string {
 func (*SubscriptionNodeResponse) ProtoMessage() {}
 
 func (x *SubscriptionNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[15]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -972,7 +1032,7 @@ func (x *SubscriptionNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionNodeResponse.ProtoReflect.Descriptor instead.
 func (*SubscriptionNodeResponse) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{15}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SubscriptionNodeResponse) GetSubscribeToken() string {
@@ -1001,7 +1061,7 @@ type MessageEvent struct {
 
 func (x *MessageEvent) Reset() {
 	*x = MessageEvent{}
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[16]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1013,7 +1073,7 @@ func (x *MessageEvent) String() string {
 func (*MessageEvent) ProtoMessage() {}
 
 func (x *MessageEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[16]
+	mi := &file_protobufStorage_protobufStorage_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1026,7 +1086,7 @@ func (x *MessageEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageEvent.ProtoReflect.Descriptor instead.
 func (*MessageEvent) Descriptor() ([]byte, []int) {
-	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{16}
+	return file_protobufStorage_protobufStorage_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *MessageEvent) GetSequenceNumber() int64 {
@@ -1061,10 +1121,11 @@ var File_protobufStorage_protobufStorage_proto protoreflect.FileDescriptor
 
 const file_protobufStorage_protobufStorage_proto_rawDesc = "" +
 	"\n" +
-	"%protobufStorage/protobufStorage.proto\x12\x0frazpravljalnica\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'protobufControlPlane/controlPlane.proto\"*\n" +
+	"%protobufStorage/protobufStorage.proto\x12\x0frazpravljalnica\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'protobufControlPlane/controlPlane.proto\"@\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"+\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05token\x18\x03 \x01(\tR\x05token\"+\n" +
 	"\x05Topic\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\xb2\x01\n" +
@@ -1082,7 +1143,10 @@ const file_protobufStorage_protobufStorage_proto_rawDesc = "" +
 	"message_id\x18\x02 \x01(\x03R\tmessageId\x12\x17\n" +
 	"\auser_id\x18\x03 \x01(\x03R\x06userId\"'\n" +
 	"\x11CreateUserRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"(\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"A\n" +
+	"\x10LoginUserRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\"(\n" +
 	"\x12CreateTopicRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\\\n" +
 	"\x12PostMessageRequest\x12\x19\n" +
@@ -1135,10 +1199,11 @@ const file_protobufStorage_protobufStorage_proto_rawDesc = "" +
 	"\tOP_DELETE\x10\x02\x12\r\n" +
 	"\tOP_UPDATE\x10\x03\x12\x12\n" +
 	"\x0eOP_CREATE_USER\x10\x04\x12\x13\n" +
-	"\x0fOP_CREATE_TOPIC\x10\x052\xcd\x06\n" +
+	"\x0fOP_CREATE_TOPIC\x10\x052\x94\a\n" +
 	"\fMessageBoard\x12G\n" +
 	"\n" +
-	"CreateUser\x12\".razpravljalnica.CreateUserRequest\x1a\x15.razpravljalnica.User\x12J\n" +
+	"CreateUser\x12\".razpravljalnica.CreateUserRequest\x1a\x15.razpravljalnica.User\x12E\n" +
+	"\tLoginUser\x12!.razpravljalnica.LoginUserRequest\x1a\x15.razpravljalnica.User\x12J\n" +
 	"\vCreateTopic\x12#.razpravljalnica.CreateTopicRequest\x1a\x16.razpravljalnica.Topic\x12L\n" +
 	"\vPostMessage\x12#.razpravljalnica.PostMessageRequest\x1a\x18.razpravljalnica.Message\x12P\n" +
 	"\rUpdateMessage\x12%.razpravljalnica.UpdateMessageRequest\x1a\x18.razpravljalnica.Message\x12N\n" +
@@ -1163,7 +1228,7 @@ func file_protobufStorage_protobufStorage_proto_rawDescGZIP() []byte {
 }
 
 var file_protobufStorage_protobufStorage_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_protobufStorage_protobufStorage_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_protobufStorage_protobufStorage_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_protobufStorage_protobufStorage_proto_goTypes = []any{
 	(OpType)(0),                           // 0: razpravljalnica.OpType
 	(*User)(nil),                          // 1: razpravljalnica.User
@@ -1171,52 +1236,55 @@ var file_protobufStorage_protobufStorage_proto_goTypes = []any{
 	(*Message)(nil),                       // 3: razpravljalnica.Message
 	(*Like)(nil),                          // 4: razpravljalnica.Like
 	(*CreateUserRequest)(nil),             // 5: razpravljalnica.CreateUserRequest
-	(*CreateTopicRequest)(nil),            // 6: razpravljalnica.CreateTopicRequest
-	(*PostMessageRequest)(nil),            // 7: razpravljalnica.PostMessageRequest
-	(*DeleteMessageRequest)(nil),          // 8: razpravljalnica.DeleteMessageRequest
-	(*UpdateMessageRequest)(nil),          // 9: razpravljalnica.UpdateMessageRequest
-	(*LikeMessageRequest)(nil),            // 10: razpravljalnica.LikeMessageRequest
-	(*ListTopicsResponse)(nil),            // 11: razpravljalnica.ListTopicsResponse
-	(*GetMessagesRequest)(nil),            // 12: razpravljalnica.GetMessagesRequest
-	(*GetMessagesResponse)(nil),           // 13: razpravljalnica.GetMessagesResponse
-	(*SubscribeTopicRequest)(nil),         // 14: razpravljalnica.SubscribeTopicRequest
-	(*SubscriptionNodeRequest)(nil),       // 15: razpravljalnica.SubscriptionNodeRequest
-	(*SubscriptionNodeResponse)(nil),      // 16: razpravljalnica.SubscriptionNodeResponse
-	(*MessageEvent)(nil),                  // 17: razpravljalnica.MessageEvent
-	(*timestamppb.Timestamp)(nil),         // 18: google.protobuf.Timestamp
-	(*protobufControlPlane.NodeInfo)(nil), // 19: razpravljalnica.NodeInfo
-	(*emptypb.Empty)(nil),                 // 20: google.protobuf.Empty
+	(*LoginUserRequest)(nil),              // 6: razpravljalnica.LoginUserRequest
+	(*CreateTopicRequest)(nil),            // 7: razpravljalnica.CreateTopicRequest
+	(*PostMessageRequest)(nil),            // 8: razpravljalnica.PostMessageRequest
+	(*DeleteMessageRequest)(nil),          // 9: razpravljalnica.DeleteMessageRequest
+	(*UpdateMessageRequest)(nil),          // 10: razpravljalnica.UpdateMessageRequest
+	(*LikeMessageRequest)(nil),            // 11: razpravljalnica.LikeMessageRequest
+	(*ListTopicsResponse)(nil),            // 12: razpravljalnica.ListTopicsResponse
+	(*GetMessagesRequest)(nil),            // 13: razpravljalnica.GetMessagesRequest
+	(*GetMessagesResponse)(nil),           // 14: razpravljalnica.GetMessagesResponse
+	(*SubscribeTopicRequest)(nil),         // 15: razpravljalnica.SubscribeTopicRequest
+	(*SubscriptionNodeRequest)(nil),       // 16: razpravljalnica.SubscriptionNodeRequest
+	(*SubscriptionNodeResponse)(nil),      // 17: razpravljalnica.SubscriptionNodeResponse
+	(*MessageEvent)(nil),                  // 18: razpravljalnica.MessageEvent
+	(*timestamppb.Timestamp)(nil),         // 19: google.protobuf.Timestamp
+	(*protobufControlPlane.NodeInfo)(nil), // 20: razpravljalnica.NodeInfo
+	(*emptypb.Empty)(nil),                 // 21: google.protobuf.Empty
 }
 var file_protobufStorage_protobufStorage_proto_depIdxs = []int32{
-	18, // 0: razpravljalnica.Message.created_at:type_name -> google.protobuf.Timestamp
+	19, // 0: razpravljalnica.Message.created_at:type_name -> google.protobuf.Timestamp
 	2,  // 1: razpravljalnica.ListTopicsResponse.topics:type_name -> razpravljalnica.Topic
 	3,  // 2: razpravljalnica.GetMessagesResponse.messages:type_name -> razpravljalnica.Message
-	19, // 3: razpravljalnica.SubscriptionNodeResponse.node:type_name -> razpravljalnica.NodeInfo
+	20, // 3: razpravljalnica.SubscriptionNodeResponse.node:type_name -> razpravljalnica.NodeInfo
 	0,  // 4: razpravljalnica.MessageEvent.op:type_name -> razpravljalnica.OpType
 	3,  // 5: razpravljalnica.MessageEvent.message:type_name -> razpravljalnica.Message
-	18, // 6: razpravljalnica.MessageEvent.event_at:type_name -> google.protobuf.Timestamp
+	19, // 6: razpravljalnica.MessageEvent.event_at:type_name -> google.protobuf.Timestamp
 	5,  // 7: razpravljalnica.MessageBoard.CreateUser:input_type -> razpravljalnica.CreateUserRequest
-	6,  // 8: razpravljalnica.MessageBoard.CreateTopic:input_type -> razpravljalnica.CreateTopicRequest
-	7,  // 9: razpravljalnica.MessageBoard.PostMessage:input_type -> razpravljalnica.PostMessageRequest
-	9,  // 10: razpravljalnica.MessageBoard.UpdateMessage:input_type -> razpravljalnica.UpdateMessageRequest
-	8,  // 11: razpravljalnica.MessageBoard.DeleteMessage:input_type -> razpravljalnica.DeleteMessageRequest
-	10, // 12: razpravljalnica.MessageBoard.LikeMessage:input_type -> razpravljalnica.LikeMessageRequest
-	15, // 13: razpravljalnica.MessageBoard.GetSubscriptionNode:input_type -> razpravljalnica.SubscriptionNodeRequest
-	20, // 14: razpravljalnica.MessageBoard.ListTopics:input_type -> google.protobuf.Empty
-	12, // 15: razpravljalnica.MessageBoard.GetMessages:input_type -> razpravljalnica.GetMessagesRequest
-	14, // 16: razpravljalnica.MessageBoard.SubscribeTopic:input_type -> razpravljalnica.SubscribeTopicRequest
-	1,  // 17: razpravljalnica.MessageBoard.CreateUser:output_type -> razpravljalnica.User
-	2,  // 18: razpravljalnica.MessageBoard.CreateTopic:output_type -> razpravljalnica.Topic
-	3,  // 19: razpravljalnica.MessageBoard.PostMessage:output_type -> razpravljalnica.Message
-	3,  // 20: razpravljalnica.MessageBoard.UpdateMessage:output_type -> razpravljalnica.Message
-	20, // 21: razpravljalnica.MessageBoard.DeleteMessage:output_type -> google.protobuf.Empty
-	3,  // 22: razpravljalnica.MessageBoard.LikeMessage:output_type -> razpravljalnica.Message
-	16, // 23: razpravljalnica.MessageBoard.GetSubscriptionNode:output_type -> razpravljalnica.SubscriptionNodeResponse
-	11, // 24: razpravljalnica.MessageBoard.ListTopics:output_type -> razpravljalnica.ListTopicsResponse
-	13, // 25: razpravljalnica.MessageBoard.GetMessages:output_type -> razpravljalnica.GetMessagesResponse
-	17, // 26: razpravljalnica.MessageBoard.SubscribeTopic:output_type -> razpravljalnica.MessageEvent
-	17, // [17:27] is the sub-list for method output_type
-	7,  // [7:17] is the sub-list for method input_type
+	6,  // 8: razpravljalnica.MessageBoard.LoginUser:input_type -> razpravljalnica.LoginUserRequest
+	7,  // 9: razpravljalnica.MessageBoard.CreateTopic:input_type -> razpravljalnica.CreateTopicRequest
+	8,  // 10: razpravljalnica.MessageBoard.PostMessage:input_type -> razpravljalnica.PostMessageRequest
+	10, // 11: razpravljalnica.MessageBoard.UpdateMessage:input_type -> razpravljalnica.UpdateMessageRequest
+	9,  // 12: razpravljalnica.MessageBoard.DeleteMessage:input_type -> razpravljalnica.DeleteMessageRequest
+	11, // 13: razpravljalnica.MessageBoard.LikeMessage:input_type -> razpravljalnica.LikeMessageRequest
+	16, // 14: razpravljalnica.MessageBoard.GetSubscriptionNode:input_type -> razpravljalnica.SubscriptionNodeRequest
+	21, // 15: razpravljalnica.MessageBoard.ListTopics:input_type -> google.protobuf.Empty
+	13, // 16: razpravljalnica.MessageBoard.GetMessages:input_type -> razpravljalnica.GetMessagesRequest
+	15, // 17: razpravljalnica.MessageBoard.SubscribeTopic:input_type -> razpravljalnica.SubscribeTopicRequest
+	1,  // 18: razpravljalnica.MessageBoard.CreateUser:output_type -> razpravljalnica.User
+	1,  // 19: razpravljalnica.MessageBoard.LoginUser:output_type -> razpravljalnica.User
+	2,  // 20: razpravljalnica.MessageBoard.CreateTopic:output_type -> razpravljalnica.Topic
+	3,  // 21: razpravljalnica.MessageBoard.PostMessage:output_type -> razpravljalnica.Message
+	3,  // 22: razpravljalnica.MessageBoard.UpdateMessage:output_type -> razpravljalnica.Message
+	21, // 23: razpravljalnica.MessageBoard.DeleteMessage:output_type -> google.protobuf.Empty
+	3,  // 24: razpravljalnica.MessageBoard.LikeMessage:output_type -> razpravljalnica.Message
+	17, // 25: razpravljalnica.MessageBoard.GetSubscriptionNode:output_type -> razpravljalnica.SubscriptionNodeResponse
+	12, // 26: razpravljalnica.MessageBoard.ListTopics:output_type -> razpravljalnica.ListTopicsResponse
+	14, // 27: razpravljalnica.MessageBoard.GetMessages:output_type -> razpravljalnica.GetMessagesResponse
+	18, // 28: razpravljalnica.MessageBoard.SubscribeTopic:output_type -> razpravljalnica.MessageEvent
+	18, // [18:29] is the sub-list for method output_type
+	7,  // [7:18] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -1233,7 +1301,7 @@ func file_protobufStorage_protobufStorage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protobufStorage_protobufStorage_proto_rawDesc), len(file_protobufStorage_protobufStorage_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -73,13 +73,13 @@ func Client(controlURL string) {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create user1: %v", err))
 	}
-	fmt.Printf("   Created user: ID=%d, Name=%s\n", user1.Id, user1.Name)
+	fmt.Printf("   Created user: ID=%d, Name=%s, Token=%s\n", user1.Id, user1.Name, user1.Token)
 
 	user2, err := headClient.CreateUser(ctx, &razpravljalnica.CreateUserRequest{Name: "Bob"})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create user2: %v", err))
 	}
-	fmt.Printf("   Created user: ID=%d, Name=%s\n", user2.Id, user2.Name)
+	fmt.Printf("   Created user: ID=%d, Name=%s, Token=%s\n", user2.Id, user2.Name, user2.Token)
 	fmt.Println()
 
 	// 3. Ustvarimo teme

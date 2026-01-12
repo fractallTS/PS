@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	MessageBoard_CreateUser_FullMethodName          = "/razpravljalnica.MessageBoard/CreateUser"
+	MessageBoard_LoginUser_FullMethodName           = "/razpravljalnica.MessageBoard/LoginUser"
 	MessageBoard_CreateTopic_FullMethodName         = "/razpravljalnica.MessageBoard/CreateTopic"
 	MessageBoard_PostMessage_FullMethodName         = "/razpravljalnica.MessageBoard/PostMessage"
 	MessageBoard_UpdateMessage_FullMethodName       = "/razpravljalnica.MessageBoard/UpdateMessage"
@@ -38,6 +39,8 @@ const (
 type MessageBoardClient interface {
 	// Creates a new user and assigns it an id
 	CreateUser(ctx context.Context, in *CreateUserRequest, opts ...grpc.CallOption) (*User, error)
+	// Logs in an already created user with a token
+	LoginUser(ctx context.Context, in *LoginUserRequest, opts ...grpc.CallOption) (*User, error)
 	// Creates a new topic to which users can post messages
 	CreateTopic(ctx context.Context, in *CreateTopicRequest, opts ...grpc.CallOption) (*Topic, error)
 	// Post a message to a topic; Succeed only if the User and the Topic exist in the database.
@@ -70,6 +73,16 @@ func (c *messageBoardClient) CreateUser(ctx context.Context, in *CreateUserReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(User)
 	err := c.cc.Invoke(ctx, MessageBoard_CreateUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *messageBoardClient) LoginUser(ctx context.Context, in *LoginUserRequest, opts ...grpc.CallOption) (*User, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(User)
+	err := c.cc.Invoke(ctx, MessageBoard_LoginUser_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +194,8 @@ type MessageBoard_SubscribeTopicClient = grpc.ServerStreamingClient[MessageEvent
 type MessageBoardServer interface {
 	// Creates a new user and assigns it an id
 	CreateUser(context.Context, *CreateUserRequest) (*User, error)
+	// Logs in an already created user with a token
+	LoginUser(context.Context, *LoginUserRequest) (*User, error)
 	// Creates a new topic to which users can post messages
 	CreateTopic(context.Context, *CreateTopicRequest) (*Topic, error)
 	// Post a message to a topic; Succeed only if the User and the Topic exist in the database.
@@ -211,6 +226,9 @@ type UnimplementedMessageBoardServer struct{}
 
 func (UnimplementedMessageBoardServer) CreateUser(context.Context, *CreateUserRequest) (*User, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateUser not implemented")
+}
+func (UnimplementedMessageBoardServer) LoginUser(context.Context, *LoginUserRequest) (*User, error) {
+	return nil, status.Error(codes.Unimplemented, "method LoginUser not implemented")
 }
 func (UnimplementedMessageBoardServer) CreateTopic(context.Context, *CreateTopicRequest) (*Topic, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateTopic not implemented")
@@ -274,6 +292,24 @@ func _MessageBoard_CreateUser_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MessageBoardServer).CreateUser(ctx, req.(*CreateUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MessageBoard_LoginUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoginUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MessageBoardServer).LoginUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MessageBoard_LoginUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MessageBoardServer).LoginUser(ctx, req.(*LoginUserRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -443,6 +479,10 @@ var MessageBoard_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateUser",
 			Handler:    _MessageBoard_CreateUser_Handler,
+		},
+		{
+			MethodName: "LoginUser",
+			Handler:    _MessageBoard_LoginUser_Handler,
 		},
 		{
 			MethodName: "CreateTopic",
