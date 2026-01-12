@@ -1,5 +1,4 @@
-# PS
-Projektna naloga: Razpravljalnica
+# Projektna naloga: Razpravljalnica
 
 Ustvarite distribuirano spletno storitev **Razpravljalnica**, ki bo namenjena izmenjavi mnenj med uporabniki o različnih temah. 
 
@@ -8,7 +7,7 @@ Razpravljalnici se lahko pridružijo novi **uporabniki**, ki nato vanjo dodajajo
 Storitev (strežnik) napišite v programskem jeziku Go. Uporablja naj ogrodje **gRPC** za komunikacijo z odjemalci (uporabniki). Prav tako napišite odjemalca, ki bo znal komunicirati s strežnikom in bo podpiral vse operacije, ki jih ponuja Razpravljalnica. Za komunikacijo znotraj storitve (med strežniki) lahko uporabite poljubno rešitev (rpc). 
 
 
-How to Use
+How to Use:
 run startup.bat
 
 OR manually
