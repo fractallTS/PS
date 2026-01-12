@@ -83,7 +83,7 @@ func ClientManual(controlURL string) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 		defer cancel()
-		user, err := headClient.LoginUser(ctx, &razpravljalnica.LoginUserRequest{
+		user, err = headClient.LoginUser(ctx, &razpravljalnica.LoginUserRequest{
 			UserId: userID,
 			Token:  token,
 		})
