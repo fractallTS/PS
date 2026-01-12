@@ -8,14 +8,6 @@ Razpravljalnici se lahko pridružijo novi **uporabniki**, ki nato vanjo dodajajo
 Storitev (strežnik) napišite v programskem jeziku Go. Uporablja naj ogrodje **gRPC** za komunikacijo z odjemalci (uporabniki). Prav tako napišite odjemalca, ki bo znal komunicirati s strežnikom in bo podpiral vse operacije, ki jih ponuja Razpravljalnica. Za komunikacijo znotraj storitve (med strežniki) lahko uporabite poljubno rešitev (rpc). 
 
 
-Progress:
-Osnova je narejena, manjka:
- - token avtentikacija pri subscribe
- - userji z istim imenom (trenutno ustvari nov userID), mogoče še možnost prijave z geslom
- - namesto nodeId izpis nečesa drugega
- - ...
-
-
 How to Use
 run startup.bat
 
